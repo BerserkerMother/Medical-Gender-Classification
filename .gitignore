@@ -1,0 +1,8 @@
+# pycharm cache
+**/__pycache__
+# tar file
+**.tar.gz
+**.tar
+# data folder
+data/
+.idea

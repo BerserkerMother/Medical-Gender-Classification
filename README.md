@@ -1,1 +1,1 @@
-# Medical Gendere Classification Using Deep Learning Methods
+# Medical Gender Classification

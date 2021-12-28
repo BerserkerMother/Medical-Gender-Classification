@@ -5,6 +5,7 @@ from torch.utils.data import Dataset
 import nibabel as nim
 import glob
 import os
+import logging
 
 from .path import DATA_PATH
 
@@ -38,12 +39,11 @@ class MedicalDataset(Dataset):
         with open(annotation_path, 'r') as file:
             text = file.read()[:-1]
         for line in text.split('\n'):
-            line = line.split(' ')
+            line = line.split('\t')
             self.data.append((line[0], line[2]))
             self.targets.append(line[1])
 
-        print('SET %s Loaded\n# samples: %d' % (split, len(self.im_id2im_path)))
-        print('_' * 100)
+        logging.info('SET %s Loaded\n# samples: %d' % (split, len(self.im_id2im_path)))
 
     def __len__(self):
         return len(self.data)

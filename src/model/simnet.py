@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchvision.models import resnet18
-
 
 class SimNet(nn.Module):
     def __init__(self, age_group_size=15, age_feature_dim=32):
@@ -74,3 +72,5 @@ class SimNet(nn.Module):
         # age_ft = self.age_encoder(age)
         # x = x + age_ft
         x = self.decoder(x)
+
+        return x

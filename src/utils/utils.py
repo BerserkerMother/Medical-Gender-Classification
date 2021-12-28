@@ -1,3 +1,9 @@
+import torch
+
+import numpy as np
+import random
+
+
 class AverageMeter:
     def __init__(self):
         self.sum = 0.
@@ -13,3 +19,9 @@ class AverageMeter:
 
     def avg(self):
         return self.sum / self.num
+
+
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)

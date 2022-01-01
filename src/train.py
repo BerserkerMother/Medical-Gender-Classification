@@ -1,13 +1,16 @@
-import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-
 from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
+import wandb
+
+import torch
+import torch.nn.functional as F
+from torchvision import transforms
+from torch.utils.data import DataLoader
 
 from data import MedicalDataset
-from model import SimNet, Resnet
+from data import IXI_MEAN, IXI_STD
+from model import SimNet
 from utils import AverageMeter, set_seed
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -16,7 +19,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def main(args):
     if args.seed:
         set_seed(args.seed)
-    train_set = MedicalDataset(args.data, split='train')
+    # wandb logging
+    wandb.init(config=args, mode="disable")
+
+    # dataset
+    transform = transforms.Normalize(mean=IXI_MEAN, std=IXI_STD)
+    train_set = MedicalDataset(args.data, split='train', transform=transform)
     val_set = MedicalDataset(args.data, split='val')
     test1_set = MedicalDataset(args.data, split='test1')
     test2_set = MedicalDataset(args.data, split='test2')
@@ -54,13 +62,24 @@ def main(args):
     )
 
     # model and optimizer
-    model = Resnet().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=5e-4)
+    model = SimNet().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
+                                 weight_decay=5e-4)
 
     for e in range(1, args.epochs):
         train_acc = train(train_loader, model, optimizer, e, args)
         val_acc = val(val_loader, model)
-        logging.info('train accuracy: %.2f%%, val accuracy: %.2f%%' % (train_acc * 100, val_acc * 100))
+
+        # logging
+        wandb.log({
+            "accuracy": {
+                "train": train_acc,
+                "val": val_acc
+            }
+        }
+        )
+        logging.info('train accuracy: %.2f%%, val accuracy: %.2f%%' %
+                     (train_acc, val_acc))
         torch.save(model.state_dict(), './model.pth')
 
     test(t1_loader, t2_loader, t3_loader, model)
@@ -95,10 +114,11 @@ def train(loader, model, optimizer, epoch, args):
 
         if (i + 1) % args.log_freq == 0:
             logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f' % (
-                epoch, args.epochs, i, loader.__len__(), total_loss / args.log_freq))
+                epoch, args.epochs, i, loader.__len__(),
+                total_loss / args.log_freq))
             total_loss = 0.0
 
-    return acc_meter.avg()
+    return acc_meter.avg() * 100
 
 
 def val(loader, model):
@@ -120,12 +140,13 @@ def val(loader, model):
             num_correct = (pred == targets).sum()
             acc_meter.update(num_correct, batch_size)
 
-    return acc_meter.avg()
+    return acc_meter.avg() * 100
 
 
 def test(t1_loader, t2_loader, t3_loader, model):
     model.eval()
-    t1_meter, t2_meter, t3_meter = AverageMeter(), AverageMeter(), AverageMeter()
+    t1_meter, t2_meter, t3_meter = \
+        AverageMeter(), AverageMeter(), AverageMeter()
 
     for data in tqdm(t1_loader):
         with torch.no_grad():
@@ -175,20 +196,27 @@ def test(t1_loader, t2_loader, t3_loader, model):
             num_correct = (pred == targets).sum()
             t3_meter.update(num_correct, batch_size)
 
-    print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" % (t1_meter.avg(), t2_meter.avg(), t3_meter.avg()))
+    print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
+          (t1_meter.avg(), t2_meter.avg(), t3_meter.avg()))
 
 
 # data related
 arg_parser = ArgumentParser(description='Medical Gender Classification')
-arg_parser.add_argument('--data', type=str, default='', required=True, help='path to data folder')
-arg_parser.add_argument('--batch_size', default=32, type=int, help='batch size')
-arg_parser.add_argument('--num_workers', default=2, type=int, help='number of data loader workers')
+arg_parser.add_argument('--data', type=str, default='', required=True,
+                        help='path to data folder')
+arg_parser.add_argument('--batch_size', default=32, type=int,
+                        help='batch size')
+arg_parser.add_argument('--num_workers', default=2, type=int,
+                        help='number of data loader workers')
 # optimization related
-arg_parser.add_argument('--lr', type=float, default=1e-4, help='optimizer learning rate')
+arg_parser.add_argument('--lr', type=float, default=1e-4,
+                        help='optimizer learning rate')
 # training related
-arg_parser.add_argument('--epochs', type=int, default=50, help='number of training epochs')
+arg_parser.add_argument('--epochs', type=int, default=50,
+                        help='number of training epochs')
 arg_parser.add_argument('--seed', type=int, help='number of training epochs')
-arg_parser.add_argument('--log_freq', type=int, default=2, help='frequency of logging')
+arg_parser.add_argument('--log_freq', type=int, default=2,
+                        help='frequency of logging')
 arg = arg_parser.parse_args()
 # config logger
 logging.basicConfig(

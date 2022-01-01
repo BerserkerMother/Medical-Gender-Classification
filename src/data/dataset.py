@@ -1,17 +1,18 @@
 """Dataset for Medical Research"""
-import torch
-from torch.utils.data import Dataset
-
 import nibabel as nim
 import glob
 import os
 import logging
 
+import torch
+from torch.utils.data import Dataset
+
 from .path import DATA_PATH
 
 
 class MedicalDataset(Dataset):
-    def __init__(self, root: str, split: str = 'train'):
+    def __init__(self, root: str, split: str = 'train',
+                 transform=None):
         """
 
         :param root: path to data folder
@@ -19,6 +20,7 @@ class MedicalDataset(Dataset):
         """
         self.root = root
         self.split = split
+        self.transform = transform
 
         # get nii files path
         self.im_id2im_path = {}
@@ -43,19 +45,27 @@ class MedicalDataset(Dataset):
             self.data.append((line[0], line[2]))
             self.targets.append(line[1])
 
-        logging.info('SET %s Loaded\n# samples: %d' % (split, len(self.im_id2im_path)))
+        logging.info('SET %s Loaded\n# samples: %d' %
+                     (split, len(self.im_id2im_path)))
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
+        """
+
+        :param idx: data index
+        :return: 3D MRI Image with Size (1, L, H, W), age group number, label
+        """
         im_id, age = self.data[idx]
         target = 0. if self.targets[idx] == 'M' else 1.
 
         age = int((float(age) - 20) / 5)
         # load nii image
         image = nim.load(self.im_id2im_path[im_id])
-        image = torch.tensor(image.get_fdata(), dtype=torch.float)
+        image = torch.tensor(image.get_fdata(), dtype=torch.float) \
+            .permute(2, 0, 1)
+        if self.transform:
+            image = self.transform(image)
         image = image.unsqueeze(0)
-
         return image, age, target

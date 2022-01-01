@@ -1,10 +1,16 @@
-import torch
+"""Simple 3D network based on presented powerpoint"""
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 
 class SimNet(nn.Module):
-    def __init__(self, age_group_size=15, age_feature_dim=32):
+    def __init__(self, age_group_size: int = 15, age_feature_dim: int = 32):
+        """
+
+        :param age_group_size: number of aging groups
+        :param age_feature_dim: age embedding dimension
+        """
         super(SimNet, self).__init__()
 
         # age embeddings
@@ -56,7 +62,13 @@ class SimNet(nn.Module):
         self.dropout = nn.Dropout(.2)
 
     # TODO: fix high over-fitting problem
-    def forward(self, x, age):
+    def forward(self, x: Tensor, age: int) -> Tensor:
+        """
+
+        :param x: brain image 3d features
+        :param age: age group number
+        :return: logits for each batch image
+        """
         batch_size = x.size()[0]
 
         x = self.relu1(self.layer_norm1(self.conv1(x)))

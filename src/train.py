@@ -5,16 +5,19 @@ import wandb
 
 import torch
 import torch.nn.functional as F
-from torchvision import transforms
 from torch.utils.data import DataLoader
+from torchvision import transforms as T
 
 from data import MedicalDataset
 from data import IXI_MEAN, IXI_STD
+from data import transforms
 from model import SimNet
 from utils import AverageMeter, set_seed
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+
+# TODO : fix normalize values, implement transformation on 3D images
 
 def main(args):
     if args.seed:
@@ -23,9 +26,12 @@ def main(args):
     wandb.init(config=args, mode="disable")
 
     # dataset
-    transform = transforms.Normalize(mean=IXI_MEAN, std=IXI_STD)
+    transform = T.Compose([
+        transforms.Normalize(mean=IXI_MEAN, std=IXI_STD),
+        transforms.RandomPermute(p=0.5)
+    ])
     train_set = MedicalDataset(args.data, split='train', transform=transform)
-    val_set = MedicalDataset(args.data, split='val')
+    val_set = MedicalDataset(args.data, split='val', transform=transform)
     test1_set = MedicalDataset(args.data, split='test1')
     test2_set = MedicalDataset(args.data, split='test2')
     test3_set = MedicalDataset(args.data, split='test3')

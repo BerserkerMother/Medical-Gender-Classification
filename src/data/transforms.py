@@ -3,11 +3,12 @@
 import random
 import numpy as np
 
+import torch
 from torch import Tensor
 
 
 class Normalize:
-    def __int__(self, mean: np.array, std: np.array):
+    def __init__(self, mean: np.array, std: np.array):
         """
 
         :param mean: data mean
@@ -15,8 +16,8 @@ class Normalize:
         :return:
         """
 
-        self.mean = mean
-        self.std = std
+        self.mean = torch.tensor(mean, dtype=torch.float).squeeze(0) + 1e-9
+        self.std = torch.tensor(std, dtype=torch.float).squeeze(0) + 1e-9
 
     def __call__(self, x: Tensor):
         """
@@ -26,6 +27,37 @@ class Normalize:
         """
 
         return (x - self.mean) / self.std
+
+
+class RandomResizeCrop:
+    def __init__(self, size: tuple):
+        """
+
+        :param size: desired size of 3D image
+        """
+        self.size = size
+
+    def __call__(self, x):
+        """
+
+        :param x: 3D image tensor (L, W, H)
+        :return: cropped and resized 3D image
+        """
+        L, W, H = x.size()
+        l_range = L - self.size[0]
+        w_range = W - self.size[1]
+        h_range = H - self.size[2]
+
+        l_start = random.randint(0, l_range)
+        w_start = random.randint(0, w_range)
+        h_start = random.randint(0, h_range)
+
+        x = x[
+            l_start: l_start + self.size[0],
+            w_start:w_start + self.size[1],
+            h_start: h_range + self.size[2]
+            ]
+        return x
 
 
 class RandomPermute:

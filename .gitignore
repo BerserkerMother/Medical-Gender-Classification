@@ -1,8 +1,10 @@
 # pycharm cache
 **/__pycache__
-# tar file
+# archive files
 **.tar.gz
 **.tar
+**.zip
+**.rar
 # data folder
 ./data/
 .idea

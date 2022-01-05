@@ -112,7 +112,7 @@ class Resnet(nn.Module):
                       padding=1)
         )
 
-        self.maxpool3d = nn.MaxPool3d(kernel_size=(7, 7, 7))
+        self.maxpool3d = nn.AdaptiveMaxPool3d(output_size=(3, 3, 4))
 
         self.fc1 = nn.Linear(1024, 256)
         self.fc2 = nn.Linear(256, 1)

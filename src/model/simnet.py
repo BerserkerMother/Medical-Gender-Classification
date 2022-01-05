@@ -57,7 +57,7 @@ class SimNet(nn.Module):
             nn.MaxPool3d(kernel_size=(2, 2, 2))
         )
 
-        self.fc = nn.Linear(2880, 1024)
+        self.fc = nn.Linear(2160, 1024)
         self.decoder = nn.Linear(1024, 1)
         self.dropout = nn.Dropout(.2)
 

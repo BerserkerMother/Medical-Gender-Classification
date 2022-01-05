@@ -2,19 +2,18 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
 import wandb
+import numpy as np
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms as T
 
-from data import MedicalDataset
-from data import IXI_MEAN, IXI_STD
-from data import transforms
+from data import MedicalDataset, transforms
 from model import SimNet
 from utils import AverageMeter, set_seed
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 # TODO : fix normalize values, implement transformation on 3D images
@@ -23,11 +22,14 @@ def main(args):
     if args.seed:
         set_seed(args.seed)
     # wandb logging
-    wandb.init(config=args, mode="disable")
+    wandb.init(config=args, mode="disabled")
 
+    mean = np.load("mean.npy")
+    std = np.load("std.npy")
     # dataset
     transform = T.Compose([
-        transforms.Normalize(mean=IXI_MEAN, std=IXI_STD),
+        transforms.Normalize(mean=mean, std=std),
+        transforms.RandomResizeCrop((121, 121, 121)),
         transforms.RandomPermute(p=0.5)
     ])
     train_set = MedicalDataset(args.data, split='train', transform=transform)
@@ -70,7 +72,7 @@ def main(args):
     # model and optimizer
     model = SimNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
-                                 weight_decay=5e-4)
+                                 weight_decay=args.weight_decay)
 
     for e in range(1, args.epochs):
         train_acc = train(train_loader, model, optimizer, e, args)
@@ -217,6 +219,8 @@ arg_parser.add_argument('--num_workers', default=2, type=int,
 # optimization related
 arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')
+arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
+                        help='optimizer weight_decay')
 # training related
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')

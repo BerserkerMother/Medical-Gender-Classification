@@ -63,8 +63,7 @@ class MedicalDataset(Dataset):
         age = int((float(age) - 20) / 5)
         # load nii image
         image = nim.load(self.im_id2im_path[im_id])
-        image = torch.tensor(image.get_fdata(), dtype=torch.float) \
-            .permute(2, 0, 1)
+        image = torch.tensor(image.get_fdata(), dtype=torch.float)
         if self.transform:
             image = self.transform(image)
         image = image.unsqueeze(0)

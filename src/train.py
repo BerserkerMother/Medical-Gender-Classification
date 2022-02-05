@@ -24,8 +24,8 @@ def main(args):
                name=args.name)
 
     # dataset
-    train_set = MedicalDataset(args.data, split='train')
-    val_set = MedicalDataset(args.data, split='val')
+    train_set = MedicalDataset(args.data, split='train', ram=args.ram)
+    val_set = MedicalDataset(args.data, split='val', ram=args.ram)
     test1_set = MedicalDataset(args.data, split='test1')
     test2_set = MedicalDataset(args.data, split='test2')
     test3_set = MedicalDataset(args.data, split='test3')
@@ -82,7 +82,7 @@ def main(args):
             },
             "loss": {
                 "train": train_loss,
-                "val": val_acc
+                "val": val_loss
             }
         }
         )
@@ -105,8 +105,10 @@ def train(loader, model, optimizer, scaler, epoch, args):
 
         batch_size = images.size()[0]
 
-        output = model(images, ages)
-        loss = F.binary_cross_entropy_with_logits(output, targets)
+        with amp.autocast():
+            output = model(images, ages)
+            loss = F.binary_cross_entropy_with_logits(output, targets)
+
         total_loss += loss.item()
         loss_meter.update(loss.item())
 
@@ -225,12 +227,16 @@ arg_parser.add_argument('--lr', type=float, default=1e-4,
 arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
                         help='optimizer weight_decay')
 # training related
-arg_parser.add_argument('--name', type=str, default='', help='experiment name')
+
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
 arg_parser.add_argument('--seed', type=int, help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
+# others
+arg_parser.add_argument('--name', type=str, default='', help='experiment name')
+arg_parser.add_argument('--ram', default=False, action="store_true",
+                        help="if True transfers images to RAM for faster IO")
 arg = arg_parser.parse_args()
 
 # config logger

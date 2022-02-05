@@ -15,21 +15,21 @@ class Resnet(nn.Module):
         super(Resnet, self).__init__()
 
         self.num_age_groups = age_group_size
-        self.age_feature_dim = age_feature_dim  # must match first second fc layers input features
+        self.age_feature_dim = age_feature_dim
 
         # define the model
         self.age_embedding = nn.Embedding(self.num_age_groups,
                                           self.age_feature_dim)
         self.layer1 = nn.Sequential(
-            nn.Conv3d(in_channels=1, out_channels=32, kernel_size=(3, 3, 3)),
+            nn.Conv3d(in_channels=1, out_channels=32, kernel_size=(7, 7, 7),
+                      stride=(2, 2, 2)),
             nn.BatchNorm3d(32),
             nn.ReLU(),
             nn.Conv3d(in_channels=32, out_channels=32, kernel_size=(3, 3, 3),
                       padding=1),
             nn.BatchNorm3d(32),
             nn.ReLU(),
-            nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(3, 3, 3),
-                      stride=(2, 2, 2))
+            nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(3, 3, 3))
         )
 
         self.layer2 = nn.Sequential(
@@ -112,7 +112,7 @@ class Resnet(nn.Module):
                       padding=1)
         )
 
-        self.maxpool3d = nn.AdaptiveMaxPool3d(output_size=(3, 3, 4))
+        self.maxpool3d = nn.AdaptiveMaxPool3d(output_size=(2, 2, 2))
 
         self.fc1 = nn.Linear(1024, 256)
         self.fc2 = nn.Linear(256, 1)

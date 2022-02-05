@@ -29,6 +29,7 @@ class Normalize:
         return (x - self.mean) / self.std
 
 
+# DON'T USE, the integrity of this class hasn't been verified yet
 class RandomResizeCrop:
     def __init__(self, size: tuple):
         """
@@ -60,6 +61,7 @@ class RandomResizeCrop:
         return x
 
 
+# DON'T USE, the integrity of this class hasn't been verified yet
 class RandomPermute:
     def __init__(self, p: float = 0.5):
         """

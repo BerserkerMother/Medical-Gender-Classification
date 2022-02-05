@@ -1,0 +1,11 @@
+# pycharm cache
+**/__pycache__
+# archive files
+**.tar.gz
+**.tar
+**.zip
+**.rar
+# data folder
+data/
+.idea
+wandb/

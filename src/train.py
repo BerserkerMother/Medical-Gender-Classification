@@ -12,15 +12,8 @@ from data import MedicalDataset, transforms
 from model import SimNet
 from utils import AverageMeter, set_seed
 
-# TODO : fix normalize values, implement transformation on 3D images
 
-if torch.cuda.is_available():
-    device = torch.device('cuda:0')
-    logging.info('Training on GPU')
-else:
-    device = torch.device("cpu")
-    logging.info("WARNING!!!")
-    logging.info("Training on CPU")
+# TODO : fix normalize values, implement transformation on 3D images
 
 
 def main(args):
@@ -239,10 +232,19 @@ arg_parser.add_argument('--seed', type=int, help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
 arg = arg_parser.parse_args()
+
 # config logger
 logging.basicConfig(
     format='[%(levelname)s] %(module)s - %(message)s',
     level=logging.INFO
 )
+
+if torch.cuda.is_available():
+    device = torch.device('cuda:0')
+    logging.info('Training on GPU')
+else:
+    device = torch.device("cpu")
+    logging.info("WARNING!!!")
+    logging.info("Training on CPU")
 if __name__ == '__main__':
     main(arg)

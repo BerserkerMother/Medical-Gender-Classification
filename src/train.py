@@ -5,7 +5,7 @@ import wandb
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
@@ -24,11 +24,18 @@ def main(args):
                name=args.name)
 
     # dataset
-    train_set = MedicalDataset(args.data, split='train', ram=args.ram)
-    val_set = MedicalDataset(args.data, split='val', ram=args.ram)
-    test1_set = MedicalDataset(args.data, split='test1')
-    test2_set = MedicalDataset(args.data, split='test2')
-    test3_set = MedicalDataset(args.data, split='test3')
+    if args.mix_split:
+        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
+        data_length = len(dataset)
+        train_length = int(data_length * 0.7)  # uses 70% for training
+        train_set, val_set = random_split(
+            dataset, lengths=[train_length, data_length - train_length])
+    else:
+        train_set = MedicalDataset(args.data, splits='train', ram=args.ram)
+        val_set = MedicalDataset(args.data, splits='val', ram=args.ram)
+    test1_set = MedicalDataset(args.data, splits='test1')
+    test2_set = MedicalDataset(args.data, splits='test2')
+    test3_set = MedicalDataset(args.data, splits='test3')
 
     train_loader = DataLoader(
         train_set,
@@ -190,6 +197,9 @@ def test(loaders, model):
 arg_parser = ArgumentParser(description='Medical Gender Classification')
 arg_parser.add_argument('--data', type=str, default='', required=True,
                         help='path to data folder')
+arg_parser.add_argument("--mix_split", default=False, action="store_true",
+                        help="if True, uses random split to create "
+                             "train and val set")
 arg_parser.add_argument('--batch_size', default=32, type=int,
                         help='batch size')
 arg_parser.add_argument('--num_workers', default=2, type=int,

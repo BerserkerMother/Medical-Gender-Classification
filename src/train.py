@@ -64,7 +64,7 @@ def main(args):
     )
 
     # model and optimizer
-    model = SimNet().to(device)
+    model = SimNet(args.dropout).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
     scaler = amp.GradScaler()
@@ -194,6 +194,9 @@ arg_parser.add_argument('--batch_size', default=32, type=int,
                         help='batch size')
 arg_parser.add_argument('--num_workers', default=2, type=int,
                         help='number of data loader workers')
+# network related
+arg_parser.add_argument("--dropout", default=0.5, type=float,
+                        help="fully connect layer dropout")
 # optimization related
 arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')

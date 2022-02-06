@@ -69,6 +69,7 @@ def main(args):
                                  weight_decay=args.weight_decay)
     scaler = amp.GradScaler()
 
+    acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
                                       scaler, e, args)
@@ -88,9 +89,13 @@ def main(args):
         )
         logging.info('train accuracy: %.2f%%, val accuracy: %.2f%%' %
                      (train_acc, val_acc))
-        torch.save(model.state_dict(), './model.pth')
+        if val_acc > acc_best:
+            torch.save(model.state_dict(), './model.pth')
+            acc_best = val_acc
 
-    test(t1_loader, t2_loader, t3_loader, model)
+    # load best model
+    model.load_state_dict(torch.load("model.pth"))
+    test((t1_loader, t2_loader, t3_loader), model)
 
 
 def train(loader, model, optimizer, scaler, epoch, args):
@@ -156,61 +161,29 @@ def val(loader, model):
     return acc_meter.avg() * 100, loss_meter.avg()
 
 
-def test(t1_loader, t2_loader, t3_loader, model):
+def test(loaders, model):
     model.eval()
-    t1_meter, t2_meter, t3_meter = \
-        AverageMeter(), AverageMeter(), AverageMeter()
+    meters = AverageMeter(), AverageMeter(), AverageMeter()
 
-    for data in tqdm(t1_loader):
-        with torch.no_grad():
-            images, ages, targets = data
-            images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
+    for loader, meter in zip(loaders, meters):
+        for data in tqdm(loader):
+            with torch.no_grad():
+                images, ages, targets = data
+                images = images.to(device)
+                ages = ages.to(device)
+                targets = targets.to(device).view(-1, 1)
 
-            batch_size = images.size()[0]
+                batch_size = images.size()[0]
 
-            output = model(images, ages)
+                output = model(images, ages)
 
-            # acc
-            pred = torch.where(output >= 0, 1., 0.)
-            num_correct = (pred == targets).sum()
-            t1_meter.update(num_correct, batch_size)
-
-    for data in tqdm(t2_loader):
-        with torch.no_grad():
-            images, ages, targets = data
-            images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
-
-            batch_size = images.size()[0]
-
-            output = model(images, ages)
-
-            # acc
-            pred = torch.where(output >= 0, 1., 0.)
-            num_correct = (pred == targets).sum()
-            t2_meter.update(num_correct, batch_size)
-
-    for data in tqdm(t3_loader):
-        with torch.no_grad():
-            images, ages, targets = data
-            images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
-
-            batch_size = images.size()[0]
-
-            output = model(images, ages)
-
-            # acc
-            pred = torch.where(output >= 0, 1., 0.)
-            num_correct = (pred == targets).sum()
-            t3_meter.update(num_correct, batch_size)
+                # acc
+                pred = torch.where(output >= 0, 1., 0.)
+                num_correct = (pred == targets).sum()
+                meter.update(num_correct, batch_size)
 
     print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
-          (t1_meter.avg(), t2_meter.avg(), t3_meter.avg()))
+          (meters[0].avg(), meters[1].avg(), meters[2].avg()))
 
 
 # data related

@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
-from model import SimNet
+from model import SimNet, AttentionNet
 from utils import AverageMeter, set_seed
 
 
@@ -71,10 +71,17 @@ def main(args):
     )
 
     # model and optimizer
-    model = SimNet(args.dropout).to(device)
+    model = AttentionNet(
+        args.dropout, att_dim=args.att_dim, sim_dim=args.sim_dim,
+        att_kernel=args.att_kernel).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
     scaler = amp.GradScaler()
+    # Count number of parameters
+    num_el = sum(parameter.numel() for parameter in model.parameters()
+                 if parameter.requires_grad) // 1000000
+    wandb.config.num_el = num_el
+    logging.info("Model hast %d parameters" % num_el)
 
     acc_best = 0.
     for e in range(1, args.epochs):
@@ -194,7 +201,8 @@ def test(loaders, model):
 
 
 # data related
-arg_parser = ArgumentParser(description='Medical Gender Classification')
+arg_parser = ArgumentParser(
+    description='Medical Gender Classification, 3D Conv with attention map')
 arg_parser.add_argument('--data', type=str, default='', required=True,
                         help='path to data folder')
 arg_parser.add_argument("--mix_split", default=False, action="store_true",
@@ -207,13 +215,19 @@ arg_parser.add_argument('--num_workers', default=2, type=int,
 # network related
 arg_parser.add_argument("--dropout", default=0.5, type=float,
                         help="fully connect layer dropout")
+# attention related
+arg_parser.add_argument("--att_kernel", type=tuple, default=(3, 3, 3),
+                        help="size of cube to bundle voxels for attention")
+arg_parser.add_argument("--sim_dim", type=int, default=128,
+                        help="similarity space dimension")
+arg_parser.add_argument("--att_dim", type=int, default=128,
+                        help="attended feature dim")
 # optimization related
 arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')
 arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
                         help='optimizer weight_decay')
 # training related
-
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
 arg_parser.add_argument('--seed', type=int, help='number of training epochs')

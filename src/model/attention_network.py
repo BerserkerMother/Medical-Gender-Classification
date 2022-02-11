@@ -71,9 +71,15 @@ class AttentionNet(nn.Module):
         )
 
         # attention modules, number next to name indicates corresponding block
-        self.attention4 = Attention(
+        self.attention2 = Attention(
             in_channels=48, output_channels=att_dim,
-            attention_kernel=att_kernel, g_dim=1024, similarity_dim=sim_dim)
+            attention_kernel=(3, 3, 3), g_dim=1024, similarity_dim=sim_dim)
+        self.attention3 = Attention(
+            in_channels=64, output_channels=att_dim,
+            attention_kernel=(2, 2, 2), g_dim=1024, similarity_dim=sim_dim)
+        self.attention4 = Attention(
+            in_channels=80, output_channels=att_dim,
+            attention_kernel=(1, 1, 1), g_dim=1024, similarity_dim=sim_dim)
 
         self.fc1 = nn.Linear(2880, 992)
         self.decoder = nn.Linear(att_dim, 1)
@@ -89,10 +95,10 @@ class AttentionNet(nn.Module):
         batch_size = x.size()[0]
 
         x = self.relu1(self.layer_norm1(self.conv1(x)))
-        x = self.block1(x)
-        block2 = self.block2(x)
-        x = self.block3(block2)
-        block4 = self.block4(x)
+        block1 = self.block1(x)
+        block2 = self.block2(block1)
+        block3 = self.block3(block2)
+        block4 = self.block4(block3)
 
         x = block4.view(batch_size, -1)
         x = F.relu(self.fc1(x))
@@ -101,7 +107,10 @@ class AttentionNet(nn.Module):
         age_ft = self.age_encoder(age)
         x = torch.cat([x, age_ft], dim=1)
         # attention forward
-        x = self.attention4(block2, x)
+        att2 = self.attention2(block2, x)
+        att3 = self.attention3(block3, x)
+        att4 = self.attention4(block4, x)
+        x = att4 + att3 + att2
 
         x = self.decoder(x)
 

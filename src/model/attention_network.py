@@ -86,7 +86,7 @@ class AttentionNet(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     # TODO: fix high over-fitting problem
-    def forward(self, x: Tensor, age: int) -> Tensor:
+    def forward(self, x: Tensor, age: int) -> tuple:
         """
         :param x: brain image 3d features
         :param age: age group number
@@ -107,14 +107,14 @@ class AttentionNet(nn.Module):
         age_ft = self.age_encoder(age)
         x = torch.cat([x, age_ft], dim=1)
         # attention forward
-        att2 = self.attention2(block2, x)
-        att3 = self.attention3(block3, x)
-        att4 = self.attention4(block4, x)
+        att2, w2 = self.attention2(block2, x)
+        att3, w3 = self.attention3(block3, x)
+        att4, w4 = self.attention4(block4, x)
         x = att4 + att3 + att2
 
         x = self.decoder(x)
 
-        return x
+        return x, [w2, w3, w4]
 
 
 class Attention(nn.Module):
@@ -151,6 +151,7 @@ class Attention(nn.Module):
         """
         batch_size, channels, H, W, L = x.size()
         conv_features = self.conv_layer(x)
+        _, _, H_, W_, L_ = conv_features.size()
         # flatten them for dot product
         conv_features = conv_features.view(batch_size, self.out_channels, -1)
         # permute C dimension because channels are used as features
@@ -168,4 +169,5 @@ class Attention(nn.Module):
         # compute weighted average
         attended_features = torch.matmul(weights, conv_features)
 
-        return attended_features.squeeze(1)
+        return attended_features.squeeze(1), weights.detach().cpu() \
+            .view(batch_size, H_, W_, L_)

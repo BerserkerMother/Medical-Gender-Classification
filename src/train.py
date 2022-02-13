@@ -125,8 +125,9 @@ def train(loader, model, optimizer, scaler, epoch, args):
         batch_size = images.size()[0]
 
         with amp.autocast():
-            output = model(images, ages)
+            output, weights = model(images, ages)
             loss = F.binary_cross_entropy_with_logits(output, targets)
+
 
         total_loss += loss.item()
         loss_meter.update(loss.item())
@@ -163,7 +164,7 @@ def val(loader, model):
 
             batch_size = images.size()[0]
 
-            output = model(images, ages)
+            output, weights = model(images, ages)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 

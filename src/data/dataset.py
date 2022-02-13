@@ -80,8 +80,8 @@ class MedicalDataset(Dataset):
             # read nii image
             image = nim.load(self.im_id2im_path[im_id])
         image = torch.tensor(image.get_fdata(), dtype=torch.float)
+        image = image.unsqueeze(0)
 
         if self.transform:
             image = self.transform(image)
-        image = image.unsqueeze(0)
         return image, age, target

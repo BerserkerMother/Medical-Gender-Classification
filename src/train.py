@@ -1,14 +1,16 @@
 from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
-import wandb
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
-from data import MedicalDataset, transforms
+import wandb
+from torchio import transforms
+
+from data import MedicalDataset
 from model import SimNet, AttentionNet
 from utils import AverageMeter, set_seed
 
@@ -23,9 +25,17 @@ def main(args):
     wandb.init(entity="berserkermother", project="MGC", config=args,
                name=args.name)
 
+    # data augmentations
+    data_aug = transforms.Compose([
+        transforms.RandomFlip(),
+        transforms.RandomBlur(),
+        transforms.RandomMotion()
+    ])
+
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
+        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram,
+                                 transform=data_aug)
         data_length = len(dataset)
         train_length = int(data_length * 0.7)  # uses 70% for training
         train_set, val_set = random_split(
@@ -127,7 +137,6 @@ def train(loader, model, optimizer, scaler, epoch, args):
         with amp.autocast():
             output, weights = model(images, ages)
             loss = F.binary_cross_entropy_with_logits(output, targets)
-
 
         total_loss += loss.item()
         loss_meter.update(loss.item())

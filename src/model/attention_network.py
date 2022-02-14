@@ -8,7 +8,8 @@ from torch import Tensor
 class AttentionNet(nn.Module):
     def __init__(self, dropout: float = 0.5, age_group_size: int = 20,
                  age_feature_dim: int = 32, att_dim: int = 128,
-                 sim_dim: int = 128, att_kernel: tuple = (6, 6, 6)):
+                 sim_dim: int = 128, att_kernel: tuple = (6, 6, 6),
+                 att_cat: bool = True):
         """
 
         :param age_group_size: number of aging groups
@@ -25,6 +26,7 @@ class AttentionNet(nn.Module):
         self.att_dim = att_dim
         self.sim_dim = sim_dim
         self.att_kernel = att_kernel
+        self.att_cat = att_cat
 
         # age embeddings
         self.age_encoder = nn.Embedding(age_group_size, age_feature_dim)
@@ -82,6 +84,10 @@ class AttentionNet(nn.Module):
             attention_kernel=(1, 1, 1), g_dim=1024, similarity_dim=sim_dim)
 
         self.fc1 = nn.Linear(2880, 992)
+
+        if att_cat:
+            self.att_cat_layer = nn.Linear(3 * att_dim, att_dim)
+
         self.decoder = nn.Linear(att_dim, 1)
         self.dropout = nn.Dropout(dropout)
 
@@ -110,7 +116,10 @@ class AttentionNet(nn.Module):
         att2, w2 = self.attention2(block2, x)
         att3, w3 = self.attention3(block3, x)
         att4, w4 = self.attention4(block4, x)
-        x = att4 + att3 + att2
+        if self.att_cat:
+            x = torch.cat([att2, att3, att4], dim=1)
+        else:
+            x = att4 + att3 + att2
 
         x = self.decoder(x)
 

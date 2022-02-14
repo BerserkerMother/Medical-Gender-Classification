@@ -199,7 +199,7 @@ def test(loaders, model):
 
                 batch_size = images.size()[0]
 
-                output = model(images, ages)
+                output, _ = model(images, ages)
 
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)

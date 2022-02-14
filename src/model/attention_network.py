@@ -118,6 +118,7 @@ class AttentionNet(nn.Module):
         att4, w4 = self.attention4(block4, x)
         if self.att_cat:
             x = torch.cat([att2, att3, att4], dim=1)
+            x = self.att_cat_layer(x)
         else:
             x = att4 + att3 + att2
 

@@ -6,6 +6,6 @@
 **.zip
 **.rar
 # data folder
-data/
+/data/
 .idea
-wandb/
+/wandb/

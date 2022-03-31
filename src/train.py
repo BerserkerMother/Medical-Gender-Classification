@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
-from model import SimNet
+from model import SimNet, Encoder
 from utils import AverageMeter, set_seed
 
 

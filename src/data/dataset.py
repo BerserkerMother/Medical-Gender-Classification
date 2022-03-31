@@ -16,7 +16,7 @@ class MedicalDataset(Dataset):
         """
 
         :param root: path to data folder
-        :param split: dataset splits (train, val, test1, test2, test3)
+        :param splits: dataset splits (train, val, test1, test2, test3)
         :param transform: 3D images transformations
         :param ram: if True then Images are copied to RAM for faster IO
         """
@@ -82,6 +82,6 @@ class MedicalDataset(Dataset):
         image = torch.tensor(image.get_fdata(), dtype=torch.float)
 
         if self.transform:
-            image = self.transform(image)
-        image = image.unsqueeze(0)
+            image = self.transform(image)  # (C, H, W), (3, H, W), (H, W), (1, H, W)
+        image = image.unsqueeze(0)  # (H, W, L) -> (1, H, W, L)
         return image, age, target

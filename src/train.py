@@ -11,6 +11,7 @@ from torch.cuda import amp
 from data import MedicalDataset, transforms
 from model import Encoder
 from utils import AverageMeter, set_seed
+from schedular import CosineSchedularLinearWarmup
 
 
 # TODO : fix normalize values, implement transformation on 3D images
@@ -71,15 +72,17 @@ def main(args):
     )
 
     # model and optimizer
-    model = Encoder(args.dropout).to(device)
+    model = Encoder().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
+    schedular = CosineSchedularLinearWarmup(optimizer, 68, 10, args.epochs,
+                                            lr=args.lr)
     scaler = amp.GradScaler()
 
     acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
-                                      scaler, e, args)
+                                      schedular, scaler, e, args)
         val_acc, val_loss = val(val_loader, model)
 
         # logging
@@ -105,7 +108,7 @@ def main(args):
     test((t1_loader, t2_loader, t3_loader), model)
 
 
-def train(loader, model, optimizer, scaler, epoch, args):
+def train(loader, model, optimizer, schedular, scaler, epoch, args):
     model.train()
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
@@ -125,6 +128,7 @@ def train(loader, model, optimizer, scaler, epoch, args):
         loss_meter.update(loss.item())
 
         # opt
+        lr = schedular.update()
         optimizer.zero_grad()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -136,9 +140,9 @@ def train(loader, model, optimizer, scaler, epoch, args):
         acc_meter.update(num_correct, batch_size)
 
         if (i + 1) % args.log_freq == 0:
-            logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f' % (
+            logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f, lr:%f' % (
                 epoch, args.epochs, i, loader.__len__(),
-                total_loss / args.log_freq))
+                total_loss / args.log_freq, lr))
             total_loss = 0.0
 
     return acc_meter.avg() * 100, loss_meter.avg()

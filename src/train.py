@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
-from model import SimNet, Encoder
+from model import Encoder
 from utils import AverageMeter, set_seed
 
 
@@ -71,7 +71,7 @@ def main(args):
     )
 
     # model and optimizer
-    model = SimNet(args.dropout).to(device)
+    model = Encoder(args.dropout).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
     scaler = amp.GradScaler()
@@ -118,7 +118,7 @@ def train(loader, model, optimizer, scaler, epoch, args):
         batch_size = images.size()[0]
 
         with amp.autocast():
-            output = model(images, ages)
+            output = model(images)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
@@ -156,7 +156,7 @@ def val(loader, model):
 
             batch_size = images.size()[0]
 
-            output = model(images, ages)
+            output = model(images)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -182,7 +182,7 @@ def test(loaders, model):
 
                 batch_size = images.size()[0]
 
-                output = model(images, ages)
+                output = model(images)
 
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)

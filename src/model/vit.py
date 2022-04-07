@@ -20,15 +20,17 @@ class Encoder(nn.Module):
         self.fc = nn.Linear(d_model, 1)
 
     def forward(self, x):
+        # visual attention
+        attn_weights = []
         # embedding
         x = self.embedding(x)
 
         for layer in self.encoder_layer:
-            x = layer(x)
+            x = layer(x, attn_weights)
 
         x = self.norm(x[:, 0, :])
         x = self.fc(x)
-        return torch.sigmoid(x)
+        return x
 
 
 class EncoderLayer(nn.Module):
@@ -44,10 +46,10 @@ class EncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout_p)
         self.dropout2 = nn.Dropout(dropout_p)
 
-    def forward(self, x):
+    def forward(self, x, att_weights):
         x1 = x
         x = self.norm1(x)
-        x = self.attention(x)
+        x = self.attention(x, att_weights)
         x = self.dropout1(x)
         x = x + x1
 
@@ -73,7 +75,7 @@ class MultiHeadAttention(nn.Module):
         self.projection = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout_p)
 
-    def forward(self, x):
+    def forward(self, x, attn_weights):
         batch_size, num_token, d_model = x.size()
 
         # size x (b, n, d)
@@ -97,6 +99,9 @@ class MultiHeadAttention(nn.Module):
         final_result = torch.matmul(weights, v).permute(0, 2, 1, 3). \
             contiguous().view(batch_size, num_token, d_model)
         final_result = self.projection(final_result)
+
+        # save attention weights
+        attn_weights.append(weights.detach().cpu())
         return final_result
 
 

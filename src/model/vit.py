@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class Encoder(nn.Module):
-    def __init__(self, d_model=512, num_layers=6, num_heads=8, dropout_p=0.2):
+    def __init__(self, d_model=512, num_layers=6, num_heads=8, dropout_p=0.3):
         super(Encoder, self).__init__()
         # embedding
         self.embedding = Embedding(d_model)
@@ -19,7 +19,7 @@ class Encoder(nn.Module):
         self.norm = nn.LayerNorm(d_model)
         self.fc = nn.Linear(d_model, 1)
 
-    def forward(self, x):
+    def forward(self, x, vis_attn=False):
         # visual attention
         attn_weights = []
         # embedding
@@ -30,6 +30,8 @@ class Encoder(nn.Module):
 
         x = self.norm(x[:, 0, :])
         x = self.fc(x)
+        if vis_attn:
+            return x, attn_weights
         return x
 
 
@@ -101,7 +103,7 @@ class MultiHeadAttention(nn.Module):
         final_result = self.projection(final_result)
 
         # save attention weights
-        # attn_weights.append(weights.detach().cpu())
+        attn_weights.append(weights.detach().cpu())
         return final_result
 
 
@@ -130,15 +132,16 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
         self.d_model = d_model
 
-        self.patcher = nn.Conv3d(1, d_model, kernel_size=(16, 16, 16),
-                                 stride=(16, 16, 16))
+        self.patcher = nn.Conv3d(1, d_model, kernel_size=(12, 12, 12),
+                                 stride=(12, 12, 12))
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, d_model))
         self.positions = nn.Parameter(torch.randn(1, max_size, d_model))
 
     def forward(self, x):
         batch_size = x.size()[0]
-        x = self.patcher(x).view(batch_size, self.d_model, -1).permute(0, 2, 1)
+        x = self.patcher(x[:, :, :120, :144, :120]) \
+            .view(batch_size, self.d_model, -1).permute(0, 2, 1)
 
         # x (b, n, d_model) -> (b, n+1, d_model)
         _, num_token, d_model = x.size()

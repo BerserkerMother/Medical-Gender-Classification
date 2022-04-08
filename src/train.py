@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
 import wandb
+import numpy as np
 
 import torch
 import torch.nn.functional as F
@@ -12,9 +13,6 @@ from data import MedicalDataset, transforms
 from model import Encoder
 from utils import AverageMeter, set_seed
 from schedular import CosineSchedularLinearWarmup
-
-
-# TODO : fix normalize values, implement transformation on 3D images
 
 
 def main(args):
@@ -78,7 +76,7 @@ def main(args):
     schedular = CosineSchedularLinearWarmup(optimizer, 68, 10, args.epochs,
                                             lr=args.lr)
     scaler = amp.GradScaler()
-
+    get_attention_maps(model, train_loader)
     acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
@@ -140,7 +138,7 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
         acc_meter.update(num_correct, batch_size)
 
         if (i + 1) % args.log_freq == 0:
-            logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f, lr:%f' % (
+            logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f, lr: %f' % (
                 epoch, args.epochs, i, loader.__len__(),
                 total_loss / args.log_freq, lr))
             total_loss = 0.0
@@ -195,6 +193,30 @@ def test(loaders, model):
 
     print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
           (meters[0].avg(), meters[1].avg(), meters[2].avg()))
+
+
+def get_attention_maps(model, loader):
+    model.eval()
+    attention_maps = [0] * 6
+    number_samples = 0
+    for data in loader:
+        image, age, target = data
+        image = image.to(device)
+        _, _, H, W, L = image.size()
+
+        with torch.no_grad():
+            x, attn_weights = model(image, True)
+        for i in range(len(attn_weights)):
+            # reshape to original image size shape(b, num_heads, n, n)
+            attn_weight = torch.mean(attn_weights[i], dim=1)[:, 0, :-1]
+            print(attn_weight)
+            attn_weight = attn_weight.view(1, 1, 10, 12, 10)
+            attn_weight = F.interpolate(attn_weight, size=(120, 144, 120))
+
+            attention_maps[i] += attn_weight
+    for i in range(len(attention_maps)):
+        attention_maps[i] /= number_samples
+        np.save("head%d" % i, attention_maps[i])
 
 
 # data related

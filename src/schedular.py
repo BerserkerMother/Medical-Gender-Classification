@@ -15,7 +15,7 @@ class CosineSchedularLinearWarmup:
             return self.step / self.wamrup_steps
         else:
             ratio = (self.step - self.wamrup_steps) / self.decay_steps
-            return 0.5 * (1 + math.cos(ratio))
+            return 0.5 * (1 + math.cos(ratio * math.pi))
 
     def update(self):
         scale = self.get_scale()

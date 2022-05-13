@@ -5,7 +5,8 @@ from torch import Tensor
 
 
 class SimNet(nn.Module):
-    def __init__(self, age_group_size: int = 15, age_feature_dim: int = 32):
+    def __init__(self, dropout: float = 0.5, age_group_size: int = 15,
+                 age_feature_dim: int = 32):
         """
 
         :param age_group_size: number of aging groups
@@ -59,7 +60,7 @@ class SimNet(nn.Module):
 
         self.fc = nn.Linear(2880, 1024)
         self.decoder = nn.Linear(1024, 1)
-        self.dropout = nn.Dropout(.2)
+        self.dropout = nn.Dropout(dropout)
 
     # TODO: fix high over-fitting problem
     def forward(self, x: Tensor, age: int) -> Tensor:

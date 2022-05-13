@@ -2,18 +2,17 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
 import wandb
+import numpy as np
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
-from model import SimNet
+from model import VIT
 from utils import AverageMeter, set_seed
-
-
-# TODO : fix normalize values, implement transformation on 3D images
+from schedular import CosineSchedularLinearWarmup
 
 
 def main(args):
@@ -24,11 +23,18 @@ def main(args):
                name=args.name)
 
     # dataset
-    train_set = MedicalDataset(args.data, split='train')
-    val_set = MedicalDataset(args.data, split='val')
-    test1_set = MedicalDataset(args.data, split='test1')
-    test2_set = MedicalDataset(args.data, split='test2')
-    test3_set = MedicalDataset(args.data, split='test3')
+    if args.mix_split:
+        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
+        data_length = len(dataset)
+        train_length = int(data_length * 0.7)  # uses 70% for training
+        train_set, val_set = random_split(
+            dataset, lengths=[train_length, data_length - train_length])
+    else:
+        train_set = MedicalDataset(args.data, splits='train', ram=args.ram)
+        val_set = MedicalDataset(args.data, splits='val', ram=args.ram)
+    test1_set = MedicalDataset(args.data, splits='test1')
+    test2_set = MedicalDataset(args.data, splits='test2')
+    test3_set = MedicalDataset(args.data, splits='test3')
 
     train_loader = DataLoader(
         train_set,
@@ -64,14 +70,20 @@ def main(args):
     )
 
     # model and optimizer
-    model = SimNet().to(device)
+    model = VIT().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
+    if args.use_schedular:
+        schedular = CosineSchedularLinearWarmup(
+            optimizer, len(train_set) // args.batch_size,
+            10, args.epochs, lr=args.lr)
+    else:
+        schedular = None
     scaler = amp.GradScaler()
-
+    acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
-                                      scaler, e, args)
+                                      schedular, scaler, e, args)
         val_acc, val_loss = val(val_loader, model)
 
         # logging
@@ -82,18 +94,22 @@ def main(args):
             },
             "loss": {
                 "train": train_loss,
-                "val": val_acc
+                "val": val_loss
             }
         }
         )
         logging.info('train accuracy: %.2f%%, val accuracy: %.2f%%' %
                      (train_acc, val_acc))
-        torch.save(model.state_dict(), './model.pth')
+        if val_acc > acc_best:
+            torch.save(model.state_dict(), './model.pth')
+            acc_best = val_acc
 
-    test(t1_loader, t2_loader, t3_loader, model)
+    # load best model
+    model.load_state_dict(torch.load("model.pth"))
+    test((t1_loader, t2_loader, t3_loader), model)
 
 
-def train(loader, model, optimizer, scaler, epoch, args):
+def train(loader, model, optimizer, schedular, scaler, epoch, args):
     model.train()
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
@@ -106,13 +122,17 @@ def train(loader, model, optimizer, scaler, epoch, args):
         batch_size = images.size()[0]
 
         with amp.autocast():
-            output = model(images, ages)
+            output = model(images)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
         loss_meter.update(loss.item())
 
         # opt
+        if args.schedular:
+            lr = schedular.update()
+        else:
+            lr = args.lr
         optimizer.zero_grad()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -124,9 +144,9 @@ def train(loader, model, optimizer, scaler, epoch, args):
         acc_meter.update(num_correct, batch_size)
 
         if (i + 1) % args.log_freq == 0:
-            logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f' % (
+            logging.info('epoch [%3d/%3d][%4d/%4d], loss: %f, lr: %f' % (
                 epoch, args.epochs, i, loader.__len__(),
-                total_loss / args.log_freq))
+                total_loss / args.log_freq, lr))
             total_loss = 0.0
 
     return acc_meter.avg() * 100, loss_meter.avg()
@@ -144,7 +164,7 @@ def val(loader, model):
 
             batch_size = images.size()[0]
 
-            output = model(images, ages)
+            output = model(images)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -156,83 +176,87 @@ def val(loader, model):
     return acc_meter.avg() * 100, loss_meter.avg()
 
 
-def test(t1_loader, t2_loader, t3_loader, model):
+def test(loaders, model):
     model.eval()
-    t1_meter, t2_meter, t3_meter = \
-        AverageMeter(), AverageMeter(), AverageMeter()
+    meters = AverageMeter(), AverageMeter(), AverageMeter()
 
-    for data in tqdm(t1_loader):
-        with torch.no_grad():
-            images, ages, targets = data
-            images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
+    for loader, meter in zip(loaders, meters):
+        for data in tqdm(loader):
+            with torch.no_grad():
+                images, ages, targets = data
+                images = images.to(device)
+                ages = ages.to(device)
+                targets = targets.to(device).view(-1, 1)
 
-            batch_size = images.size()[0]
+                batch_size = images.size()[0]
 
-            output = model(images, ages)
+                output = model(images)
 
-            # acc
-            pred = torch.where(output >= 0, 1., 0.)
-            num_correct = (pred == targets).sum()
-            t1_meter.update(num_correct, batch_size)
-
-    for data in tqdm(t2_loader):
-        with torch.no_grad():
-            images, ages, targets = data
-            images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
-
-            batch_size = images.size()[0]
-
-            output = model(images, ages)
-
-            # acc
-            pred = torch.where(output >= 0, 1., 0.)
-            num_correct = (pred == targets).sum()
-            t2_meter.update(num_correct, batch_size)
-
-    for data in tqdm(t3_loader):
-        with torch.no_grad():
-            images, ages, targets = data
-            images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
-
-            batch_size = images.size()[0]
-
-            output = model(images, ages)
-
-            # acc
-            pred = torch.where(output >= 0, 1., 0.)
-            num_correct = (pred == targets).sum()
-            t3_meter.update(num_correct, batch_size)
+                # acc
+                pred = torch.where(output >= 0, 1., 0.)
+                num_correct = (pred == targets).sum()
+                meter.update(num_correct, batch_size)
 
     print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
-          (t1_meter.avg(), t2_meter.avg(), t3_meter.avg()))
+          (meters[0].avg(), meters[1].avg(), meters[2].avg()))
+
+
+def get_attention_maps(model, loader):
+    model.eval()
+    attention_maps = [0] * 6
+    number_samples = 0
+    for data in loader:
+        image, age, target = data
+        image = image.to(device)
+        _, _, H, W, L = image.size()
+
+        with torch.no_grad():
+            x, attn_weights = model(image, True)
+        for i in range(len(attn_weights)):
+            # reshape to original image size shape(b, num_heads, n, n)
+            attn_weight = torch.mean(attn_weights[i], dim=1)[:, 0, :-1]
+            print(attn_weight)
+            attn_weight = attn_weight.view(1, 1, 10, 12, 10)
+            attn_weight = F.interpolate(attn_weight, size=(120, 144, 120))
+
+            attention_maps[i] += attn_weight
+    for i in range(len(attention_maps)):
+        attention_maps[i] /= number_samples
+        np.save("head%d" % i, attention_maps[i])
 
 
 # data related
 arg_parser = ArgumentParser(description='Medical Gender Classification')
 arg_parser.add_argument('--data', type=str, default='', required=True,
                         help='path to data folder')
+arg_parser.add_argument("--mix_split", default=False, action="store_true",
+                        help="if True, uses random split to create "
+                             "train and val set")
 arg_parser.add_argument('--batch_size', default=32, type=int,
                         help='batch size')
 arg_parser.add_argument('--num_workers', default=2, type=int,
                         help='number of data loader workers')
+# network related
+arg_parser.add_argument("--dropout", default=0.5, type=float,
+                        help="fully connect layer dropout")
 # optimization related
 arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')
 arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
                         help='optimizer weight_decay')
+arg_parser.add_argument('--use_schedular', action='store_true',
+                        help='uses learning rate warmup and decay')
 # training related
-arg_parser.add_argument('--name', type=str, default='', help='experiment name')
+
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
 arg_parser.add_argument('--seed', type=int, help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
+# others
+arg_parser.add_argument('--name', type=str, default='', help='experiment name')
+arg_parser.add_argument('--ram', default=False, action="store_true",
+                        help="if True transfers images to RAM for faster IO")
 arg = arg_parser.parse_args()
 
 # config logger

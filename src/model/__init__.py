@@ -1,3 +1,3 @@
 from .simnet import SimNet
 from .resnet import Resnet
-from .vit import Encoder
+from .vit import VIT

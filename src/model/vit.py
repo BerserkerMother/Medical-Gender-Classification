@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class Encoder(nn.Module):
+class VIT(nn.Module):
     def __init__(self, d_model=512, num_layers=6, num_heads=8, dropout_p=0.3):
-        super(Encoder, self).__init__()
+        super(VIT, self).__init__()
         # embedding
         self.embedding = Embedding(d_model)
 
@@ -103,7 +103,7 @@ class MultiHeadAttention(nn.Module):
         final_result = self.projection(final_result)
 
         # save attention weights
-        attn_weights.append(weights.detach().cpu())
+        # attn_weights.append(weights.detach().cpu())
         return final_result
 
 

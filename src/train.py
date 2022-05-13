@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
-from model import Encoder
+from model import VIT
 from utils import AverageMeter, set_seed
 from schedular import CosineSchedularLinearWarmup
 
@@ -70,13 +70,16 @@ def main(args):
     )
 
     # model and optimizer
-    model = Encoder().to(device)
+    model = VIT().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
-    schedular = CosineSchedularLinearWarmup(optimizer, 68, 10, args.epochs,
-                                            lr=args.lr)
+    if args.use_schedular:
+        schedular = CosineSchedularLinearWarmup(
+            optimizer, len(train_set) // args.batch_size,
+            10, args.epochs, lr=args.lr)
+    else:
+        schedular = None
     scaler = amp.GradScaler()
-    get_attention_maps(model, train_loader)
     acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
@@ -126,7 +129,10 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
         loss_meter.update(loss.item())
 
         # opt
-        lr = schedular.update()
+        if args.schedular:
+            lr = schedular.update()
+        else:
+            lr = args.lr
         optimizer.zero_grad()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -238,6 +244,8 @@ arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')
 arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
                         help='optimizer weight_decay')
+arg_parser.add_argument('--use_schedular', action='store_true',
+                        help='uses learning rate warmup and decay')
 # training related
 
 arg_parser.add_argument('--epochs', type=int, default=50,

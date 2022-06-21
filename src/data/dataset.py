@@ -50,7 +50,10 @@ class MedicalDataset(Dataset):
                 text = file.read()[:-1]
             for line in text.split('\n'):
                 line = line.split('\t')
-                self.data.append((line[0], line[2]))
+                # create extra information tuple
+                extra = (float(line[2]), float(line[3]),
+                         float(line[4]), float(line[8]))
+                self.data.append((line[0], extra))
                 self.targets.append(line[1])
                 # transfer to ram if ram is True
                 if self.ram:
@@ -69,9 +72,9 @@ class MedicalDataset(Dataset):
         :param idx: data index
         :return: 3D MRI Image with Size (1, L, H, W), age group number, label
         """
-        im_id, age = self.data[idx]
+        im_id, extra = self.data[idx]
         target = 0. if self.targets[idx] == 'M' else 1.
-        age = int((float(age) - 20) / 5)
+        age, TIV, GMv, GMn = extra
 
         # IO
         if self.ram:
@@ -84,4 +87,4 @@ class MedicalDataset(Dataset):
         if self.transform:
             image = self.transform(image)  # (C, H, W), (3, H, W), (H, W), (1, H, W)
         image = image.unsqueeze(0)  # (H, W, L) -> (1, H, W, L)
-        return image, age, target
+        return image, age, TIV, GMv, GMn, target

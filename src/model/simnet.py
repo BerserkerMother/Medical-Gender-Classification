@@ -1,21 +1,20 @@
 """Simple 3D network based on presented powerpoint"""
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
 
 class SimNet(nn.Module):
-    def __init__(self, dropout: float = 0.5, age_group_size: int = 15,
-                 age_feature_dim: int = 32):
+    def __init__(self, dropout: float = 0.2, num_classes: int = 1):
         """
 
-        :param age_group_size: number of aging groups
-        :param age_feature_dim: age embedding dimension
+        :param num_classes: output vector dimension
+        :param dropout: dropout rate
         """
         super(SimNet, self).__init__()
-
-        # age embeddings
-        self.age_encoder = nn.Embedding(age_group_size, age_feature_dim)
+        # model info
+        self.name = "Model#1"
 
         self.conv1 = nn.Conv3d(1, 32, kernel_size=(7, 7, 7), stride=(2, 2, 2))
         self.layer_norm1 = nn.BatchNorm3d(32)
@@ -59,16 +58,29 @@ class SimNet(nn.Module):
         )
 
         self.fc = nn.Linear(2880, 1024)
-        self.decoder = nn.Linear(1024, 1)
+        self.decoder = nn.Linear(1024, num_classes)
         self.dropout = nn.Dropout(dropout)
 
+        self.image_encoder = nn.Sequential(
+            self.conv1,
+            self.layer_norm1,
+            nn.ReLU(),
+            self.block1,
+            self.block2,
+            self.block3,
+            self.block4,
+            nn.Flatten(),
+            self.fc,
+            self.dropout,
+            self.decoder
+        )
+
     # TODO: fix high over-fitting problem
-    def forward(self, x: Tensor, age: int) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         currently not using age argument!
 
         :param x: brain image 3d features
-        :param age: age group number
         :return: logits for each batch image
         """
         batch_size = x.size()[0]
@@ -80,11 +92,94 @@ class SimNet(nn.Module):
         x = self.block4(x)
 
         x = x.view(batch_size, -1)
+        # include age
         x = F.relu(self.fc(x))
         x = self.dropout(x)
-
-        # age_ft = self.age_encoder(age)
-        # x = x + age_ft
         x = self.decoder(x)
 
         return x
+
+    def forward_seq(self, x: Tensor) -> Tensor:
+        """
+        currently not using age argument!
+
+        :param x: brain image 3d features
+        :return: logits for each batch image
+        """
+        return self.image_encoder(x)
+
+
+# extra information dim for each variant of model
+MODEL_DIM = {
+    2: 1,
+    3: 2,
+    4: 3,
+    5: 2,
+}
+
+
+class SimNetExtra(SimNet):
+    def __init__(self, model_num: int = 2, **kwargs):
+        super(SimNetExtra, self).__init__(num_classes=64, **kwargs)
+        # model info
+        self.name = ("Model#%d" % model_num)
+        self.model_num = model_num
+        self.extra_dim = MODEL_DIM[model_num]
+
+        # encoder age into 64 vector
+        self.extra_info_encoder = nn.Sequential(
+            nn.Linear(self.extra_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(kwargs["dropout"]),
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            nn.Dropout(kwargs["dropout"]),
+            nn.Linear(64, 64)
+        )
+        # decoder after fusing multi modal features
+        self.decoder = nn.Linear(64, 1)
+
+    def forward_with_extra(self, x: Tensor,
+                           age: Tensor,
+                           GMv: Tensor,
+                           TIV: Tensor,
+                           GMn: Tensor,
+                           fusion: str = "sum",
+                           ) -> Tensor:
+        """
+        currently not using age argument!
+
+        :param x: brain image 3d features
+        :param age: the age of patient
+        :param fusion: fusion method (sum, hadamard)
+        :param GMv: the GMv number
+        :param TIV: the TIV number
+        :param GMn: the GMn number
+        :return: logits for each batch image
+        """
+
+        image_ft = self.forward_seq(x)  # gets image features
+        # cat together extra info
+        if self.model_num == 2:
+            extra = age
+        elif self.model_num == 3:
+            extra = torch.cat([age, TIV], dim=1)  # since each will be (bs, 1)
+        elif self.model_num == 4:
+            # since each will be (bs, 1)
+            extra = torch.cat([age, TIV, GMv], dim=1)
+        elif self.model_num == 5:
+            extra = torch.cat([age, GMn], dim=1)  # since each will be (bs, 1)
+        else:
+            raise Exception("Invalid Model number!!")
+
+        extra_ft = self.extra_info_encoder(extra)
+
+        # fusion
+        if fusion == "sum":
+            fused_ft = image_ft + extra_ft
+        elif fusion == "hadamard":
+            fused_ft = image_ft * extra_ft
+        else:
+            raise Exception("Not Implemented fusion method!")
+        logits = self.decoder(fused_ft)
+        return logits

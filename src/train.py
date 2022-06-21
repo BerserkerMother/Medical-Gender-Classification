@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
 from data import MedicalDataset, transforms
-from model import VIT
-from utils import AverageMeter, set_seed
+from model import SimNet, SimNetExtra
+from utils import AverageMeter, set_seed, log_and_display
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -70,7 +70,11 @@ def main(args):
     )
 
     # model and optimizer
-    model = VIT().to(device)
+    if args.model == 1:
+        model = SimNet(dropout=args.dropout).to(device)
+    else:
+        model = SimNetExtra(dropout=args.dropout,
+                            model_num=args.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
     if args.use_schedular:
@@ -84,29 +88,18 @@ def main(args):
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
                                       schedular, scaler, e, args)
-        val_acc, val_loss = val(val_loader, model)
+        val_acc, val_loss = val(val_loader, model, args)
 
         # logging
-        wandb.log({
-            "accuracy": {
-                "train": train_acc,
-                "val": val_acc
-            },
-            "loss": {
-                "train": train_loss,
-                "val": val_loss
-            }
-        }
-        )
-        logging.info('train accuracy: %.2f%%, val accuracy: %.2f%%' %
-                     (train_acc, val_acc))
+        log_and_display(train_acc, val_acc, train_loss, val_loss)
+
         if val_acc > acc_best:
             torch.save(model.state_dict(), './model.pth')
             acc_best = val_acc
 
     # load best model
     model.load_state_dict(torch.load("model.pth"))
-    test((t1_loader, t2_loader, t3_loader), model)
+    test((t1_loader, t2_loader, t3_loader), model, args)
 
 
 def train(loader, model, optimizer, schedular, scaler, epoch, args):
@@ -114,22 +107,28 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
     for i, data in enumerate(loader):
-        images, ages, targets = data
+        images, age, TIV, GMv, GMn, targets = data
         images = images.to(device)
-        ages = ages.to(device)
-        targets = targets.to(device).view(-1, 1)
+        age = age.to(device).unsqueeze(1).type(torch.float)
+        TIV = TIV.to(device).unsqueeze(1).type(torch.float)
+        GMv = GMv.to(device).unsqueeze(1).type(torch.float)
+        GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+        targets = targets.to(device).unsqueeze(1)
 
         batch_size = images.size()[0]
 
         with amp.autocast():
-            output = model(images)
+            if args.model == 1:
+                output = model(images)
+            else:
+                output = model.forward_with_extra(images, age, TIV, GMv, GMn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
         loss_meter.update(loss.item())
 
         # opt
-        if args.schedular:
+        if args.use_schedular:
             lr = schedular.update()
         else:
             lr = args.lr
@@ -152,19 +151,25 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
     return acc_meter.avg() * 100, loss_meter.avg()
 
 
-def val(loader, model):
+def val(loader, model, args):
     model.eval()
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     for data in tqdm(loader):
         with torch.no_grad():
-            images, ages, targets = data
+            images, age, TIV, GMv, GMn, targets = data
             images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
+            age = age.to(device).unsqueeze(1).type(torch.float)
+            TIV = TIV.to(device).unsqueeze(1).type(torch.float)
+            GMv = GMv.to(device).unsqueeze(1).type(torch.float)
+            GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+            targets = targets.to(device).unsqueeze(1)
 
             batch_size = images.size()[0]
 
-            output = model(images)
+            if args.model == 1:
+                output = model(images)
+            else:
+                output = model.forward_with_extra(images, age, TIV, GMv, GMn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -176,22 +181,27 @@ def val(loader, model):
     return acc_meter.avg() * 100, loss_meter.avg()
 
 
-def test(loaders, model):
+def test(loaders, model, args):
     model.eval()
     meters = AverageMeter(), AverageMeter(), AverageMeter()
 
     for loader, meter in zip(loaders, meters):
         for data in tqdm(loader):
             with torch.no_grad():
-                images, ages, targets = data
+                images, age, TIV, GMv, GMn, targets = data
                 images = images.to(device)
-                ages = ages.to(device)
-                targets = targets.to(device).view(-1, 1)
+                age = age.to(device).unsqueeze(1).type(torch.float)
+                TIV = TIV.to(device).unsqueeze(1).type(torch.float)
+                GMv = GMv.to(device).unsqueeze(1).type(torch.float)
+                GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+                targets = targets.to(device).unsqueeze(1)
 
                 batch_size = images.size()[0]
 
-                output = model(images)
-
+                if args.model == 1:
+                    output = model(images)
+                else:
+                    output = model.forward_with_extra(images, age, TIV, GMv, GMn)
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)
                 num_correct = (pred == targets).sum()
@@ -199,30 +209,6 @@ def test(loaders, model):
 
     print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
           (meters[0].avg(), meters[1].avg(), meters[2].avg()))
-
-
-def get_attention_maps(model, loader):
-    model.eval()
-    attention_maps = [0] * 6
-    number_samples = 0
-    for data in loader:
-        image, age, target = data
-        image = image.to(device)
-        _, _, H, W, L = image.size()
-
-        with torch.no_grad():
-            x, attn_weights = model(image, True)
-        for i in range(len(attn_weights)):
-            # reshape to original image size shape(b, num_heads, n, n)
-            attn_weight = torch.mean(attn_weights[i], dim=1)[:, 0, :-1]
-            print(attn_weight)
-            attn_weight = attn_weight.view(1, 1, 10, 12, 10)
-            attn_weight = F.interpolate(attn_weight, size=(120, 144, 120))
-
-            attention_maps[i] += attn_weight
-    for i in range(len(attention_maps)):
-        attention_maps[i] /= number_samples
-        np.save("head%d" % i, attention_maps[i])
 
 
 # data related
@@ -237,8 +223,10 @@ arg_parser.add_argument('--batch_size', default=32, type=int,
 arg_parser.add_argument('--num_workers', default=2, type=int,
                         help='number of data loader workers')
 # network related
-arg_parser.add_argument("--dropout", default=0.5, type=float,
+arg_parser.add_argument("--dropout", default=0.2, type=float,
                         help="fully connect layer dropout")
+arg_parser.add_argument("--model", default=1, type=int,
+                        help="which model to use")
 # optimization related
 arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')

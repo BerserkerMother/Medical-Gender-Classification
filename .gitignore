@@ -9,3 +9,6 @@
 data/
 .idea
 wandb/
+
+# fix annotation file
+.fix_anno.py

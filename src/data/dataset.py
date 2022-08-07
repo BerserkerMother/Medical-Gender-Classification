@@ -52,7 +52,8 @@ class MedicalDataset(Dataset):
                 line = line.split('\t')
                 # create extra information tuple
                 extra = (float(line[2]), float(line[3]),
-                         float(line[4]), float(line[8]))
+                         float(line[4]), float(line[8]),
+                         float(line[9]), float(line[10]))
                 self.data.append((line[0], extra))
                 self.targets.append(line[1])
                 # transfer to ram if ram is True
@@ -74,7 +75,7 @@ class MedicalDataset(Dataset):
         """
         im_id, extra = self.data[idx]
         target = 0. if self.targets[idx] == 'M' else 1.
-        age, TIV, GMv, GMn = extra
+        age, TIV, GMv, GMn, WMn, CSFn = extra
 
         # IO
         if self.ram:
@@ -87,4 +88,4 @@ class MedicalDataset(Dataset):
         if self.transform:
             image = self.transform(image)  # (C, H, W), (3, H, W), (H, W), (1, H, W)
         image = image.unsqueeze(0)  # (H, W, L) -> (1, H, W, L)
-        return image, age, TIV, GMv, GMn, target
+        return image, age, TIV, GMv, GMn, WMn, CSFn, target

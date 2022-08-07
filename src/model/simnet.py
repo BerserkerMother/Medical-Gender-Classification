@@ -115,6 +115,8 @@ MODEL_DIM = {
     3: 2,
     4: 3,
     5: 2,
+    6: 3,
+    7: 4,
 }
 
 
@@ -144,6 +146,8 @@ class SimNetExtra(SimNet):
                            GMv: Tensor,
                            TIV: Tensor,
                            GMn: Tensor,
+                           WMn: Tensor,
+                           CSFn: Tensor,
                            fusion: str = "sum",
                            ) -> Tensor:
         """
@@ -155,6 +159,8 @@ class SimNetExtra(SimNet):
         :param GMv: the GMv number
         :param TIV: the TIV number
         :param GMn: the GMn number
+        :param WMn: the WMn number
+        :param CSFn: the CSFn number
         :return: logits for each batch image
         """
 
@@ -169,6 +175,10 @@ class SimNetExtra(SimNet):
             extra = torch.cat([age, TIV, GMv], dim=1)
         elif self.model_num == 5:
             extra = torch.cat([age, GMn], dim=1)  # since each will be (bs, 1)
+        elif self.model_num == 6:
+            extra = torch.cat([age, GMn, WMn], dim=1)
+        elif self.model_num == 7:
+            extra = torch.cat([age, GMn, WMn, CSFn], dim=1)
         else:
             raise Exception("Invalid Model number!!")
 

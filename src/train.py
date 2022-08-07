@@ -20,7 +20,7 @@ def main(args):
         set_seed(args.seed)
     # wandb logging
     wandb.init(entity="berserkermother", project="MGC", config=args,
-               name=args.name)
+               name=args.name, mode="disabled")
 
     # dataset
     if args.mix_split:
@@ -107,12 +107,14 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
     for i, data in enumerate(loader):
-        images, age, TIV, GMv, GMn, targets = data
+        images, age, TIV, GMv, GMn, WMn, CSFn, targets = data
         images = images.to(device)
         age = age.to(device).unsqueeze(1).type(torch.float)
         TIV = TIV.to(device).unsqueeze(1).type(torch.float)
         GMv = GMv.to(device).unsqueeze(1).type(torch.float)
         GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+        WMn = WMn.to(device).unsqueeze(1).type(torch.float)
+        CSFn = CSFn.to(device).unsqueeze(1).type(torch.float)
         targets = targets.to(device).unsqueeze(1)
 
         batch_size = images.size()[0]
@@ -121,7 +123,7 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
             if args.model == 1:
                 output = model(images)
             else:
-                output = model.forward_with_extra(images, age, TIV, GMv, GMn)
+                output = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
@@ -156,12 +158,14 @@ def val(loader, model, args):
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     for data in tqdm(loader):
         with torch.no_grad():
-            images, age, TIV, GMv, GMn, targets = data
+            images, age, TIV, GMv, GMn, WMn, CSFn,targets = data
             images = images.to(device)
             age = age.to(device).unsqueeze(1).type(torch.float)
             TIV = TIV.to(device).unsqueeze(1).type(torch.float)
             GMv = GMv.to(device).unsqueeze(1).type(torch.float)
             GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+            WMn = WMn.to(device).unsqueeze(1).type(torch.float)
+            CSFn = CSFn.to(device).unsqueeze(1).type(torch.float)
             targets = targets.to(device).unsqueeze(1)
 
             batch_size = images.size()[0]
@@ -169,7 +173,7 @@ def val(loader, model, args):
             if args.model == 1:
                 output = model(images)
             else:
-                output = model.forward_with_extra(images, age, TIV, GMv, GMn)
+                output = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -188,12 +192,14 @@ def test(loaders, model, args):
     for loader, meter in zip(loaders, meters):
         for data in tqdm(loader):
             with torch.no_grad():
-                images, age, TIV, GMv, GMn, targets = data
+                images, age, TIV, GMv, GMn, WMn, CSFn, targets = data
                 images = images.to(device)
                 age = age.to(device).unsqueeze(1).type(torch.float)
                 TIV = TIV.to(device).unsqueeze(1).type(torch.float)
                 GMv = GMv.to(device).unsqueeze(1).type(torch.float)
                 GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+                WMn = WMn.to(device).unsqueeze(1).type(torch.float)
+                CSFn = CSFn.to(device).unsqueeze(1).type(torch.float)
                 targets = targets.to(device).unsqueeze(1)
 
                 batch_size = images.size()[0]
@@ -201,7 +207,7 @@ def test(loaders, model, args):
                 if args.model == 1:
                     output = model(images)
                 else:
-                    output = model.forward_with_extra(images, age, TIV, GMv, GMn)
+                    output = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)
                 num_correct = (pred == targets).sum()

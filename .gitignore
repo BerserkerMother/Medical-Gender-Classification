@@ -12,3 +12,7 @@ wandb/
 
 # fix annotation file
 .fix_anno.py
+
+data.xlsx
+results.md
+xlsx_to_text.py

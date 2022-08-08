@@ -88,4 +88,4 @@ class MedicalDataset(Dataset):
         if self.transform:
             image = self.transform(image)  # (C, H, W), (3, H, W), (H, W), (1, H, W)
         image = image.unsqueeze(0)  # (H, W, L) -> (1, H, W, L)
-        return image, age, TIV, GMv, GMn, WMn, CSFn, target
+        return image, age, TIV, GMv, GMn, WMn, CSFn, target, im_id

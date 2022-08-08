@@ -2,12 +2,15 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
 import wandb
-import numpy as np
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
+
+import pandas as pd
+from pandas import ExcelWriter
+from pandas import ExcelFile
 
 from data import MedicalDataset, transforms
 from model import SimNet, SimNetExtra
@@ -99,8 +102,11 @@ def main(args):
 
     # load best model
     model.load_state_dict(torch.load("model.pth"))
-    test((t1_loader, t2_loader, t3_loader), model, args)
-    print(acc_best)
+    test(
+        (["train", "val", "test1", "test2", "test3"]
+         , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
+         )
+        , model, args)
 
 
 def train(loader, model, optimizer, schedular, scaler, epoch, args):
@@ -108,7 +114,7 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
     for i, data in enumerate(loader):
-        images, age, TIV, GMv, GMn, WMn, CSFn, targets = data
+        images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
         images = images.to(device)
         age = age.to(device).unsqueeze(1).type(torch.float)
         TIV = TIV.to(device).unsqueeze(1).type(torch.float)
@@ -159,7 +165,7 @@ def val(loader, model, args):
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     for data in tqdm(loader):
         with torch.no_grad():
-            images, age, TIV, GMv, GMn, WMn, CSFn,targets = data
+            images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
             images = images.to(device)
             age = age.to(device).unsqueeze(1).type(torch.float)
             TIV = TIV.to(device).unsqueeze(1).type(torch.float)
@@ -188,12 +194,14 @@ def val(loader, model, args):
 
 def test(loaders, model, args):
     model.eval()
-    meters = AverageMeter(), AverageMeter(), AverageMeter()
+    splits, loaders = loaders
+    meters = [AverageMeter()] * len(loaders)
 
-    for loader, meter in zip(loaders, meters):
+    for split, loader, meter in zip(splits, loaders, meters):
+        names, prediction = [], []
         for data in tqdm(loader):
             with torch.no_grad():
-                images, age, TIV, GMv, GMn, WMn, CSFn, targets = data
+                images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
                 images = images.to(device)
                 age = age.to(device).unsqueeze(1).type(torch.float)
                 TIV = TIV.to(device).unsqueeze(1).type(torch.float)
@@ -214,8 +222,21 @@ def test(loaders, model, args):
                 num_correct = (pred == targets).sum()
                 meter.update(num_correct, batch_size)
 
-    print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
-          (meters[0].avg(), meters[1].avg(), meters[2].avg()))
+                # saving data for logging predictions to xlsx
+                names += name
+                prediction += (torch.sigmoid(output).tolist())
+
+        # save predictions to xlsx
+        data_frame = pd.DataFrame({
+            "IDs": names,
+            "Score": prediction
+        })
+        writer = ExcelWriter("predictions.xlsx")
+        data_frame.to_excel(writer, split, index=False)
+        writer.save()
+
+    print("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
+          (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
 
 
 # data related
@@ -245,7 +266,7 @@ arg_parser.add_argument('--use_schedular', action='store_true',
 
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
-arg_parser.add_argument('--seed', type=int, default=34324 ,help='number of training epochs')
+arg_parser.add_argument('--seed', type=int, default=34324, help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
 # others

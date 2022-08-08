@@ -16,3 +16,7 @@ wandb/
 data.xlsx
 results.md
 xlsx_to_text.py
+
+# pytorch model checkpoint
+**.pth
+**.pt

@@ -24,7 +24,7 @@ def main(args):
 
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
+        dataset = MedicalDataset(args.data, splits='train+val+test3', ram=args.ram)
         data_length = len(dataset)
         train_length = int(data_length * 0.7)  # uses 70% for training
         train_set, val_set = random_split(
@@ -100,6 +100,7 @@ def main(args):
     # load best model
     model.load_state_dict(torch.load("model.pth"))
     test((t1_loader, t2_loader, t3_loader), model, args)
+    print(acc_best)
 
 
 def train(loader, model, optimizer, schedular, scaler, epoch, args):
@@ -244,7 +245,7 @@ arg_parser.add_argument('--use_schedular', action='store_true',
 
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
-arg_parser.add_argument('--seed', type=int, help='number of training epochs')
+arg_parser.add_argument('--seed', type=int, default=34324 ,help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
 # others

@@ -52,13 +52,30 @@ def log_and_display(train_acc, val_acc, train_loss, val_loss):
 
 def plot_hist(scores, experiment_name):
     sns.set_theme()
+    _, axs = plt.subplots(3, 2, figsize=(18, 12))
     names = ["train", "validation", "test1", "test2", "test3"]
 
-    for name, data in zip(names, scores):
-        sns.kdeplot(data, label=name)
-    plt.legend()
+    for ax, (name, data) in zip(axs.ravel(), zip(names, scores)):
+        sns.histplot(data, label=name, kde=True, ax=ax)
+        ax.title.set_text(name)
 
     save_path = os.path.join("plots", experiment_name)
+    if not os.path.exists("plots"):
+        os.mkdir("plots")
+
+    plt.savefig(save_path)
+
+
+def plot_target_distri(scores, experiment_name):
+    sns.set_theme()
+    _, axs = plt.subplots(3, 2, figsize=(18, 12))
+    names = ["train", "validation", "test1", "test2", "test3"]
+
+    for ax, (name, data) in zip(axs.ravel(), zip(names, scores)):
+        sns.histplot(data, label=name, ax=ax, bins=2)
+        ax.title.set_text(name)
+
+    save_path = os.path.join("plots", experiment_name + "target")
     if not os.path.exists("plots"):
         os.mkdir("plots")
 

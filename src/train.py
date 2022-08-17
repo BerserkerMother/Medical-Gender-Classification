@@ -13,7 +13,7 @@ from pandas import ExcelWriter
 
 from data import MedicalDataset, transforms
 from model import SimNet, SimNetExtra
-from utils import AverageMeter, set_seed, log_and_display, plot_hist
+from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -37,6 +37,10 @@ def main(args):
     test1_set = MedicalDataset(args.data, splits='test1')
     test2_set = MedicalDataset(args.data, splits='test2')
     test3_set = MedicalDataset(args.data, splits='test3')
+    datasets_targets = []
+    for ds in (train_set, val_set, test1_set, test2_set, test3_set):
+        datasets_targets.append([i[-2] for i in ds])
+    plot_target_distri(datasets_targets, args.name)
 
     train_loader = DataLoader(
         train_set,
@@ -100,7 +104,7 @@ def main(args):
             acc_best = val_acc
 
     # load best model
-    model.load_state_dict(torch.load("model.pth"))
+    # model.load_state_dict(torch.load("model.pth"))
     test(
         (["train", "val", "test1", "test2", "test3"]
          , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
@@ -197,6 +201,7 @@ def test(loaders, model, args):
     meters = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
     plot_scores = []  # save scores to later plot their distribution with kdeplot
 
+    writer = ExcelWriter("predictions.xlsx")
     for split, loader, meter in zip(splits, loaders, meters):
         names, prediction = [], []
         for data in tqdm(loader):
@@ -232,9 +237,8 @@ def test(loaders, model, args):
             "IDs": names,
             "Score": prediction
         })
-        writer = ExcelWriter("predictions.xlsx")
         data_frame.to_excel(writer, split, index=False)
-        writer.save()
+    writer.save()
     plot_hist(plot_scores, args.name)
     logging.info("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
                  (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))

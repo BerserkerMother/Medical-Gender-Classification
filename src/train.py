@@ -13,7 +13,7 @@ from pandas import ExcelWriter
 
 from data import MedicalDataset, transforms
 from model import SimNet, SimNetExtra
-from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri
+from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri, sampling_ratio
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -41,6 +41,7 @@ def main(args):
     for ds in (train_set, val_set, test1_set, test2_set, test3_set):
         datasets_targets.append([i[-2] for i in ds])
     plot_target_distri(datasets_targets, args.name)
+    loss_sampling_weight = sampling_ratio(train_set)
 
     train_loader = DataLoader(
         train_set,
@@ -93,7 +94,7 @@ def main(args):
     acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
-                                      schedular, scaler, e, args)
+                                      schedular, scaler, loss_sampling_weight, e, args)
         val_acc, val_loss = val(val_loader, model, args)
 
         # logging
@@ -104,15 +105,16 @@ def main(args):
             acc_best = val_acc
 
     # load best model
-    # model.load_state_dict(torch.load("model.pth"))
+    model.load_state_dict(torch.load("model.pth"))
     test(
         (["train", "val", "test1", "test2", "test3"]
          , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
          )
         , model, args)
+    torch.save(model.state_dict(), "%s.pth" % args.name)
 
 
-def train(loader, model, optimizer, schedular, scaler, epoch, args):
+def train(loader, model, optimizer, schedular, scaler, ratio, epoch, args):
     model.train()
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
@@ -129,6 +131,8 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
 
         batch_size = images.size()[0]
 
+        sampling_weights = torch.ones_like(targets)
+        sampling_weights[targets == 1] = ratio
         with amp.autocast():
             if args.model == 1:
                 output = model(images)
@@ -268,7 +272,6 @@ arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
 arg_parser.add_argument('--use_schedular', action='store_true',
                         help='uses learning rate warmup and decay')
 # training related
-
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
 arg_parser.add_argument('--seed', type=int, default=34324

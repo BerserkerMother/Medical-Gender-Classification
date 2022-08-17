@@ -56,7 +56,7 @@ def plot_hist(scores, experiment_name):
     names = ["train", "validation", "test1", "test2", "test3"]
 
     for ax, (name, data) in zip(axs.ravel(), zip(names, scores)):
-        sns.histplot(data, label=name, kde=True, ax=ax)
+        sns.histplot(data, label=name, kde=True, ax=ax, bins=20)
         ax.title.set_text(name)
 
     save_path = os.path.join("plots", experiment_name)
@@ -80,3 +80,15 @@ def plot_target_distri(scores, experiment_name):
         os.mkdir("plots")
 
     plt.savefig(save_path)
+
+
+def sampling_ratio(ds):
+    male = 0
+    female = 0
+    for data in ds:
+        if data[-2] == 1:
+            male += 1
+        else:
+            female += 1
+
+    return female / male

@@ -10,11 +10,10 @@ from torch.cuda import amp
 
 import pandas as pd
 from pandas import ExcelWriter
-from pandas import ExcelFile
 
 from data import MedicalDataset, transforms
 from model import SimNet, SimNetExtra
-from utils import AverageMeter, set_seed, log_and_display
+from utils import AverageMeter, set_seed, log_and_display, plot_hist
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -23,11 +22,11 @@ def main(args):
         set_seed(args.seed)
     # wandb logging
     wandb.init(entity="berserkermother", project="MGC", config=args,
-               name=args.name, mode="disabled")
+               name=args.name)
 
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val+test3', ram=args.ram)
+        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
         data_length = len(dataset)
         train_length = int(data_length * 0.7)  # uses 70% for training
         train_set, val_set = random_split(
@@ -195,7 +194,8 @@ def val(loader, model, args):
 def test(loaders, model, args):
     model.eval()
     splits, loaders = loaders
-    meters = [AverageMeter()] * len(loaders)
+    meters = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
+    plot_scores = []  # save scores to later plot their distribution with kdeplot
 
     for split, loader, meter in zip(splits, loaders, meters):
         names, prediction = [], []
@@ -224,8 +224,9 @@ def test(loaders, model, args):
 
                 # saving data for logging predictions to xlsx
                 names += name
-                prediction += (torch.sigmoid(output).tolist())
+                prediction += (torch.sigmoid(output.view(-1)).tolist())
 
+        plot_scores.append(prediction)
         # save predictions to xlsx
         data_frame = pd.DataFrame({
             "IDs": names,
@@ -234,9 +235,9 @@ def test(loaders, model, args):
         writer = ExcelWriter("predictions.xlsx")
         data_frame.to_excel(writer, split, index=False)
         writer.save()
-
-    print("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
-          (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
+    plot_hist(plot_scores, args.name)
+    logging.info("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
+                 (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
 
 
 # data related
@@ -266,11 +267,13 @@ arg_parser.add_argument('--use_schedular', action='store_true',
 
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
-arg_parser.add_argument('--seed', type=int, default=34324, help='number of training epochs')
+arg_parser.add_argument('--seed', type=int, default=34324
+                        , help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
 # others
-arg_parser.add_argument('--name', type=str, default='', help='experiment name')
+arg_parser.add_argument('--name', type=str, default='', required=True,
+                        help='experiment name')
 arg_parser.add_argument('--ram', default=False, action="store_true",
                         help="if True transfers images to RAM for faster IO")
 arg = arg_parser.parse_args()

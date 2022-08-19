@@ -13,7 +13,7 @@ from pandas import ExcelWriter
 
 from data import MedicalDataset, transforms
 from model import SimNet, SimNetExtra
-from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri, sampling_ratio
+from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -41,7 +41,6 @@ def main(args):
     for ds in (train_set, val_set, test1_set, test2_set, test3_set):
         datasets_targets.append([i[-2] for i in ds])
     plot_target_distri(datasets_targets, args.name)
-    loss_sampling_weight = sampling_ratio(train_set)
 
     train_loader = DataLoader(
         train_set,
@@ -94,7 +93,7 @@ def main(args):
     acc_best = 0.
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
-                                      schedular, scaler, loss_sampling_weight, e, args)
+                                      schedular, scaler, e, args)
         val_acc, val_loss = val(val_loader, model, args)
 
         # logging
@@ -105,16 +104,17 @@ def main(args):
             acc_best = val_acc
 
     # load best model
-    model.load_state_dict(torch.load("model.pth"))
+    model.load_state_dict(torch.load("model_7.pth"))
     test(
         (["train", "val", "test1", "test2", "test3"]
          , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
          )
         , model, args)
     torch.save(model.state_dict(), "%s.pth" % args.name)
+    wandb.finish()
 
 
-def train(loader, model, optimizer, schedular, scaler, ratio, epoch, args):
+def train(loader, model, optimizer, schedular, scaler, epoch, args):
     model.train()
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
@@ -131,8 +131,6 @@ def train(loader, model, optimizer, schedular, scaler, ratio, epoch, args):
 
         batch_size = images.size()[0]
 
-        sampling_weights = torch.ones_like(targets)
-        sampling_weights[targets == 1] = ratio
         with amp.autocast():
             if args.model == 1:
                 output = model(images)
@@ -203,10 +201,13 @@ def test(loaders, model, args):
     model.eval()
     splits, loaders = loaders
     meters = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
+    cls_category = []
     plot_scores = []  # save scores to later plot their distribution with kdeplot
 
-    writer = ExcelWriter("predictions.xlsx")
+    writer = ExcelWriter("predictions_%s.xlsx" % args.name)
     for split, loader, meter in zip(splits, loaders, meters):
+        c_male, c_female = 0., 0.
+        t_male, t_female = 0., 0.
         names, prediction = [], []
         for data in tqdm(loader):
             with torch.no_grad():
@@ -229,12 +230,17 @@ def test(loaders, model, args):
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)
                 num_correct = (pred == targets).sum()
+                c_male += (pred[targets == 0] == targets[targets == 0]).sum()
+                c_female += (pred[targets == 1] == targets[targets == 1]).sum()
                 meter.update(num_correct, batch_size)
 
+                t_male += targets[targets == 0].sum()
+                t_female += targets[targets == 1].sum()
                 # saving data for logging predictions to xlsx
                 names += name
                 prediction += (torch.sigmoid(output.view(-1)).tolist())
 
+        cls_category.append((c_male / t_male, c_female / t_female))
         plot_scores.append(prediction)
         # save predictions to xlsx
         data_frame = pd.DataFrame({
@@ -246,6 +252,15 @@ def test(loaders, model, args):
     plot_hist(plot_scores, args.name)
     logging.info("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
                  (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
+    logging.info("Male vs. Female\n"
+                 "%2.2f, %2.2f\n"
+                 "%2.2f, %2.2f\n"
+                 "%2.2f, %2.2f\n"
+                 "%2.2f, %2.2f\n"
+                 "%2.2f, %2.2f\n" %
+                 (cls_category[0][0], cls_category[0][1], cls_category[1][0], cls_category[1][1],
+                  cls_category[2][0], cls_category[2][1], cls_category[3][0], cls_category[3][1],
+                  cls_category[4][0], cls_category[4][1]))
 
 
 # data related

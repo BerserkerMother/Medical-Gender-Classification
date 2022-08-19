@@ -80,15 +80,3 @@ def plot_target_distri(scores, experiment_name):
         os.mkdir("plots")
 
     plt.savefig(save_path)
-
-
-def sampling_ratio(ds):
-    male = 0
-    female = 0
-    for data in ds:
-        if data[-2] == 1:
-            male += 1
-        else:
-            female += 1
-
-    return female / male

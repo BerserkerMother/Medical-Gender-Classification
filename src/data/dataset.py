@@ -4,6 +4,7 @@ import glob
 import os
 import logging
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 
@@ -57,11 +58,15 @@ class MedicalDataset(Dataset):
                 targets.append(line[1])
 
         if train:
+            indices = np.arange(len(data))
+            np.random.shuffle(indices)
             num_male = sum([1 for gen in targets if gen == 'M'])
             self.data = []
             self.targets = []
             num_female = 0
-            for d, t in zip(data, targets):
+            for idx in indices:
+                d = data[idx]
+                t = targets[idx]
                 if t == 'M':
                     self.data.append(d)
                     self.targets.append(t)

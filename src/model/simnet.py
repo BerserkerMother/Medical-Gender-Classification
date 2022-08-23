@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models.video.resnet
 from torch import Tensor
 
 
@@ -16,42 +17,42 @@ class SimNet(nn.Module):
         # model info
         self.name = "Model#1"
 
-        self.conv1 = nn.Conv3d(1, 32, kernel_size=(7, 7, 7), stride=(2, 2, 2))
+        self.conv1 = nn.Conv3d(1, 32, kernel_size=(7, 7, 7), stride=(2, 2, 2), bias=False)
         self.layer_norm1 = nn.BatchNorm3d(32)
         self.relu1 = nn.ReLU()
 
         self.block1 = nn.Sequential(
-            nn.Conv3d(32, 32, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(32, 32, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(32),
             nn.ReLU(),
             nn.MaxPool3d(kernel_size=(2, 2, 2))
         )
 
         self.block2 = nn.Sequential(
-            nn.Conv3d(32, 48, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(32, 48, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(48),
             nn.ReLU(),
-            nn.Conv3d(48, 48, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(48, 48, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(48),
             nn.ReLU(),
             nn.MaxPool3d(kernel_size=(2, 2, 2))
         )
 
         self.block3 = nn.Sequential(
-            nn.Conv3d(48, 64, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(48, 64, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(64),
             nn.ReLU(),
-            nn.Conv3d(64, 64, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(64, 64, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(64),
             nn.ReLU(),
             nn.MaxPool3d(kernel_size=(2, 2, 2))
         )
 
         self.block4 = nn.Sequential(
-            nn.Conv3d(64, 80, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(64, 80, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(80),
             nn.ReLU(),
-            nn.Conv3d(80, 80, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
+            nn.Conv3d(80, 80, kernel_size=(3, 3, 3), padding=(1, 1, 1), bias=False),
             nn.BatchNorm3d(80),
             nn.ReLU(),
             nn.MaxPool3d(kernel_size=(2, 2, 2))
@@ -74,6 +75,11 @@ class SimNet(nn.Module):
             self.dropout,
             self.decoder
         )
+
+    def init_weights(self):
+        for module in self.image_encoder.children():
+            if isinstance(module, nn.Conv3d):
+                nn.init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
 
     # TODO: fix high over-fitting problem
     def forward(self, x: Tensor) -> Tensor:
@@ -120,9 +126,39 @@ MODEL_DIM = {
 }
 
 
-class SimNetExtra(SimNet):
+class R3D18(nn.Module):
+    def __init__(self, num_classes=64):
+        super(R3D18, self).__init__()
+        # model info
+        self.name = "3D Resnet"
+
+        # original R3D18
+        res = torchvision.models.video.r3d_18(pretrained=True)
+        res = list(res.children())[1:-1]
+        basic_stem = nn.Sequential(
+            nn.Conv3d(1, 64, kernel_size=(7, 7, 7), stride=(2, 2, 2), bias=False),
+            nn.BatchNorm3d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+            nn.ReLU(inplace=True)
+        )
+        self.image_encoder = nn.Sequential(
+            basic_stem,
+            *res
+        )
+        self.fc = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        x = self.image_encoder(x)
+        x = torch.flatten(x, start_dim=1)
+        x = self.fc(x)
+        return x
+
+    def forward_seq(self, x):
+        return self.forward(x)
+
+
+class SimNetExtra(R3D18):
     def __init__(self, model_num: int = 2, **kwargs):
-        super(SimNetExtra, self).__init__(num_classes=64, **kwargs)
+        super(SimNetExtra, self).__init__(num_classes=64)
         # model info
         self.name = ("Model#%d" % model_num)
         self.model_num = model_num

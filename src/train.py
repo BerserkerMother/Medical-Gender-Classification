@@ -37,10 +37,10 @@ def main(args):
     test1_set = MedicalDataset(args.data, splits='test1')
     test2_set = MedicalDataset(args.data, splits='test2')
     test3_set = MedicalDataset(args.data, splits='test3')
-    datasets_targets = []
-    for ds in (train_set, val_set, test1_set, test2_set, test3_set):
-        datasets_targets.append([i[-2] for i in ds])
-    plot_target_distri(datasets_targets, args.name)
+    #datasets_targets = []
+    #for ds in (train_set, val_set, test1_set, test2_set, test3_set):
+    #    datasets_targets.append([i[-2] for i in ds])
+    # plot_target_distri(datasets_targets, args.name)
 
     train_loader = DataLoader(
         train_set,
@@ -234,7 +234,7 @@ def test(loaders, model, args):
                 c_female += (pred[targets == 1] == targets[targets == 1]).sum()
                 meter.update(num_correct, batch_size)
 
-                t_male += targets[targets == 0].sum()
+                t_male += (targets[targets == 0] == 0).sum()
                 t_female += targets[targets == 1].sum()
                 # saving data for logging predictions to xlsx
                 names += name

@@ -26,7 +26,7 @@ def main(args):
 
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
+        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram, train=True)
         data_length = len(dataset)
         train_length = int(data_length * 0.7)  # uses 70% for training
         train_set, val_set = random_split(
@@ -37,10 +37,10 @@ def main(args):
     test1_set = MedicalDataset(args.data, splits='test1')
     test2_set = MedicalDataset(args.data, splits='test2')
     test3_set = MedicalDataset(args.data, splits='test3')
-    #datasets_targets = []
-    #for ds in (train_set, val_set, test1_set, test2_set, test3_set):
-    #    datasets_targets.append([i[-2] for i in ds])
-    # plot_target_distri(datasets_targets, args.name)
+    datasets_targets = []
+    for ds in (train_set, val_set, test1_set, test2_set, test3_set):
+        datasets_targets.append([i[-2] for i in ds])
+    plot_target_distri(datasets_targets, args.name)
 
     train_loader = DataLoader(
         train_set,
@@ -104,7 +104,7 @@ def main(args):
             acc_best = val_acc
 
     # load best model
-    model.load_state_dict(torch.load("model_7.pth"))
+    model.load_state_dict(torch.load("model.pth"))
     test(
         (["train", "val", "test1", "test2", "test3"]
          , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]

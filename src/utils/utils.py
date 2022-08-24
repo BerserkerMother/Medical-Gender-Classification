@@ -80,3 +80,15 @@ def plot_target_distri(scores, experiment_name):
         os.mkdir("plots")
 
     plt.savefig(save_path)
+
+
+def plot_tsne(emd, labels, name, ex_name):
+    sns.set_theme()
+    sns.scatterplot(x=emd[:, 0], y=emd[:, 1], hue=labels.squeeze(1))
+
+    plt.legend()
+    save_path = os.path.join("plots", ex_name + "tsne_" + name)
+    if not os.path.exists("plots"):
+        os.mkdir("plots")
+
+    plt.savefig(save_path)

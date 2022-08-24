@@ -10,10 +10,11 @@ from torch.cuda import amp
 
 import pandas as pd
 from pandas import ExcelWriter
+from sklearn.manifold import TSNE
 
 from data import MedicalDataset, transforms
 from model import SimNet, SimNetExtra
-from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri
+from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri, plot_tsne
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -38,9 +39,9 @@ def main(args):
     test2_set = MedicalDataset(args.data, splits='test2')
     test3_set = MedicalDataset(args.data, splits='test3')
     datasets_targets = []
-    for ds in (train_set, val_set, test1_set, test2_set, test3_set):
-        datasets_targets.append([i[-2] for i in ds])
-    plot_target_distri(datasets_targets, args.name)
+    # for ds in (train_set, val_set, test1_set, test2_set, test3_set):
+    #    datasets_targets.append([i[-2] for i in ds])
+    # plot_target_distri(datasets_targets, args.name)
 
     train_loader = DataLoader(
         train_set,
@@ -104,7 +105,7 @@ def main(args):
             acc_best = val_acc
 
     # load best model
-    model.load_state_dict(torch.load("model.pth"))
+    # model.load_state_dict(torch.load("model.pth"))
     test(
         (["train", "val", "test1", "test2", "test3"]
          , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
@@ -135,7 +136,7 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
             if args.model == 1:
                 output = model(images)
             else:
-                output = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+                output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
@@ -185,7 +186,7 @@ def val(loader, model, args):
             if args.model == 1:
                 output = model(images)
             else:
-                output = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+                output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -209,6 +210,9 @@ def test(loaders, model, args):
         c_male, c_female = 0., 0.
         t_male, t_female = 0., 0.
         names, prediction = [], []
+        t_sne = []
+        t_sne_labels = []
+
         for data in tqdm(loader):
             with torch.no_grad():
                 images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
@@ -226,7 +230,9 @@ def test(loaders, model, args):
                 if args.model == 1:
                     output = model(images)
                 else:
-                    output = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+                    output, emd = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+                    t_sne.append(emd.cpu())
+                    t_sne_labels.append(targets.to(torch.long).cpu())
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)
                 num_correct = (pred == targets).sum()
@@ -239,6 +245,10 @@ def test(loaders, model, args):
                 # saving data for logging predictions to xlsx
                 names += name
                 prediction += (torch.sigmoid(output.view(-1)).tolist())
+        t_sne_labels = torch.cat(t_sne_labels, dim=0).numpy()
+        t_sne = torch.cat(t_sne, dim=0).numpy()
+        emd_x = TSNE().fit_transform(t_sne)
+        plot_tsne(emd_x, t_sne_labels, split, args.name)
 
         cls_category.append((c_male / t_male, c_female / t_female))
         plot_scores.append(prediction)

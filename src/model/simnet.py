@@ -185,7 +185,7 @@ class SimNetExtra(R3D18):
                            WMn: Tensor,
                            CSFn: Tensor,
                            fusion: str = "sum",
-                           ) -> Tensor:
+                           ):
         """
         currently not using age argument!
 
@@ -228,4 +228,4 @@ class SimNetExtra(R3D18):
         else:
             raise Exception("Not Implemented fusion method!")
         logits = self.decoder(fused_ft)
-        return logits
+        return logits, fused_ft

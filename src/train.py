@@ -27,21 +27,23 @@ def main(args):
 
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram, train=True)
+        dataset = MedicalDataset(args.data, splits='train+val+test1', ram=args.ram, train=True)
         data_length = len(dataset)
-        train_length = int(data_length * 0.7)  # uses 70% for training
-        train_set, val_set = random_split(
-            dataset, lengths=[train_length, data_length - train_length])
+        train_length = int(data_length * 0.8)  # uses 70% for training
+        val_length = (data_length - train_length) // 2
+        test_length = data_length - train_length - val_length
+        train_set, val_set, test1_set = random_split(
+            dataset, lengths=[train_length, val_length, test_length])
     else:
         train_set = MedicalDataset(args.data, splits='train', ram=args.ram)
         val_set = MedicalDataset(args.data, splits='val', ram=args.ram)
-    test1_set = MedicalDataset(args.data, splits='test1')
+        test1_set = MedicalDataset(args.data, splits='test1')
     test2_set = MedicalDataset(args.data, splits='test2')
     test3_set = MedicalDataset(args.data, splits='test3')
     datasets_targets = []
-    # for ds in (train_set, val_set, test1_set, test2_set, test3_set):
-    #    datasets_targets.append([i[-2] for i in ds])
-    # plot_target_distri(datasets_targets, args.name)
+    for ds in (train_set, val_set, test1_set, test2_set, test3_set):
+        datasets_targets.append([i[-2] for i in ds])
+    plot_target_distri(datasets_targets, args.name)
 
     train_loader = DataLoader(
         train_set,
@@ -105,9 +107,9 @@ def main(args):
             acc_best = val_acc
 
     # load best model
-    # model.load_state_dict(torch.load("model.pth"))
+    model.load_state_dict(torch.load("model.pth"))
     test(
-        (["train", "val", "test1", "test2", "test3"]
+        (["train", "val", "healthy", "MCI", "Alz"]
          , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
          )
         , model, args)

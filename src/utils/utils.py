@@ -83,8 +83,9 @@ def plot_target_distri(scores, experiment_name):
 
 
 def plot_tsne(emd, labels, name, ex_name):
+    plt.figure()
     sns.set_theme()
-    sns.scatterplot(x=emd[:, 0], y=emd[:, 1], hue=labels.squeeze(1))
+    sns.scatterplot(x=emd[:, 0], y=emd[:, 1], hue=labels.squeeze(1), label=name)
 
     plt.legend()
     save_path = os.path.join("plots", ex_name + "tsne_" + name)

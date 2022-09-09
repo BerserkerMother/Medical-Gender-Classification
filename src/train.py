@@ -29,7 +29,7 @@ def main(args):
     if args.mix_split:
         dataset = MedicalDataset(args.data, splits='train+val+test1', ram=args.ram, train=True)
         data_length = len(dataset)
-        train_length = int(data_length * 0.8)  # uses 70% for training
+        train_length = int(data_length * 0.8)  # uses 80% for training
         val_length = (data_length - train_length) // 2
         test_length = data_length - train_length - val_length
         train_set, val_set, test1_set = random_split(
@@ -262,17 +262,20 @@ def test(loaders, model, args):
         data_frame.to_excel(writer, split, index=False)
     writer.save()
     plot_hist(plot_scores, args.name)
-    logging.info("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
-                 (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
-    logging.info("Male vs. Female\n"
-                 "%2.2f, %2.2f\n"
-                 "%2.2f, %2.2f\n"
-                 "%2.2f, %2.2f\n"
-                 "%2.2f, %2.2f\n"
-                 "%2.2f, %2.2f\n" %
-                 (cls_category[0][0], cls_category[0][1], cls_category[1][0], cls_category[1][1],
-                  cls_category[2][0], cls_category[2][1], cls_category[3][0], cls_category[3][1],
-                  cls_category[4][0], cls_category[4][1]))
+    # log to text
+    with open("res.txt", 'a') as f:
+        f.write(args.name)
+        f.write("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f\n" %
+                (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
+        f.write("Male vs. Female\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n" %
+                (cls_category[0][0], cls_category[0][1], cls_category[1][0], cls_category[1][1],
+                 cls_category[2][0], cls_category[2][1], cls_category[3][0], cls_category[3][1],
+                 cls_category[4][0], cls_category[4][1]))
 
 
 # data related

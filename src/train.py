@@ -13,7 +13,7 @@ from pandas import ExcelWriter
 from sklearn.manifold import TSNE
 
 from data import MedicalDataset, transforms
-from model import SimNet, SimNetExtra
+from model import SimNetExtra
 from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri, plot_tsne
 from schedular import CosineSchedularLinearWarmup
 
@@ -79,17 +79,14 @@ def main(args):
     )
 
     # model and optimizer
-    if args.model == 1:
-        model = SimNet(dropout=args.dropout).to(device)
-    else:
-        model = SimNetExtra(dropout=args.dropout,
-                            model_num=args.model).to(device)
+    model = SimNetExtra(dropout=args.dropout,
+                        model_num=args.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
     if args.use_schedular:
         schedular = CosineSchedularLinearWarmup(
             optimizer, len(train_set) // args.batch_size,
-            10, args.epochs, lr=args.lr)
+            0, args.epochs, lr=args.lr)
     else:
         schedular = None
     scaler = amp.GradScaler()
@@ -135,10 +132,7 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
         batch_size = images.size()[0]
 
         with amp.autocast():
-            if args.model == 1:
-                output = model(images)
-            else:
-                output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+            output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
@@ -185,10 +179,7 @@ def val(loader, model, args):
 
             batch_size = images.size()[0]
 
-            if args.model == 1:
-                output = model(images)
-            else:
-                output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+            output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -229,12 +220,9 @@ def test(loaders, model, args):
 
                 batch_size = images.size()[0]
 
-                if args.model == 1:
-                    output = model(images)
-                else:
-                    output, emd = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
-                    t_sne.append(emd.cpu())
-                    t_sne_labels.append(targets.to(torch.long).cpu())
+                output, emd = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+                t_sne.append(emd.cpu())
+                t_sne_labels.append(targets.to(torch.long).cpu())
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)
                 num_correct = (pred == targets).sum()

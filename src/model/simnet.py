@@ -117,6 +117,7 @@ class SimNet(nn.Module):
 
 # extra information dim for each variant of model
 MODEL_DIM = {
+    1: 1,
     2: 1,
     3: 2,
     4: 3,
@@ -202,7 +203,9 @@ class SimNetExtra(R3D18):
 
         image_ft = self.forward_seq(x)  # gets image features
         # cat together extra info
-        if self.model_num == 2:
+        if self.model_num == 1:
+            return self.decoder(image_ft), image_ft
+        elif self.model_num == 2:
             extra = age
         elif self.model_num == 3:
             extra = torch.cat([age, TIV], dim=1)  # since each will be (bs, 1)

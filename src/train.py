@@ -11,8 +11,9 @@ from torch.cuda import amp
 import pandas as pd
 from pandas import ExcelWriter
 from sklearn.manifold import TSNE
+from torchio import transforms
 
-from data import MedicalDataset, transforms
+from data import MedicalDataset
 from model import SimNetExtra
 from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri, plot_tsne
 from schedular import CosineSchedularLinearWarmup
@@ -25,9 +26,17 @@ def main(args):
     wandb.init(entity="berserkermother", project="MGC", config=args,
                name=args.name)
 
+    # data augmentations
+    data_aug = transforms.Compose([
+        transforms.RandomFlip(),
+        transforms.RandomBlur(),
+        transforms.RandomMotion()
+    ])
+
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val+test1', ram=args.ram, train=True)
+        dataset = MedicalDataset(args.data, splits='train+val+test1',
+                                 transform=data_aug, ram=args.ram, train=True)
         data_length = len(dataset)
         train_length = int(data_length * 0.8)  # uses 80% for training
         val_length = (data_length - train_length) // 2

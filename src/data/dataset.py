@@ -96,7 +96,7 @@ class MedicalDataset(Dataset):
         image = nim.load(self.im_id2im_path[im_id])
         image = torch.tensor(image.get_fdata(), dtype=torch.float)
 
+        image = image.unsqueeze(0)  # (H, W, L) -> (1, H, W, L)
         if self.transform:
             image = self.transform(image)  # (C, H, W), (3, H, W), (H, W), (1, H, W)
-        image = image.unsqueeze(0)  # (H, W, L) -> (1, H, W, L)
         return image, age, TIV, GMv, GMn, WMn, CSFn, target, im_id

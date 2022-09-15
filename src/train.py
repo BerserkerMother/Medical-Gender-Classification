@@ -2,16 +2,19 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import logging
 import wandb
-import numpy as np
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 from torch.cuda import amp
 
+import pandas as pd
+from pandas import ExcelWriter
+from sklearn.manifold import TSNE
+
 from data import MedicalDataset, transforms
-from model import VIT
-from utils import AverageMeter, set_seed
+from model import SimNetExtra
+from utils import AverageMeter, set_seed, log_and_display, plot_hist, plot_target_distri, plot_tsne
 from schedular import CosineSchedularLinearWarmup
 
 
@@ -24,17 +27,23 @@ def main(args):
 
     # dataset
     if args.mix_split:
-        dataset = MedicalDataset(args.data, splits='train+val', ram=args.ram)
+        dataset = MedicalDataset(args.data, splits='train+val+test1', ram=args.ram, train=True)
         data_length = len(dataset)
-        train_length = int(data_length * 0.7)  # uses 70% for training
-        train_set, val_set = random_split(
-            dataset, lengths=[train_length, data_length - train_length])
+        train_length = int(data_length * 0.8)  # uses 80% for training
+        val_length = (data_length - train_length) // 2
+        test_length = data_length - train_length - val_length
+        train_set, val_set, test1_set = random_split(
+            dataset, lengths=[train_length, val_length, test_length])
     else:
         train_set = MedicalDataset(args.data, splits='train', ram=args.ram)
         val_set = MedicalDataset(args.data, splits='val', ram=args.ram)
-    test1_set = MedicalDataset(args.data, splits='test1')
+        test1_set = MedicalDataset(args.data, splits='test1')
     test2_set = MedicalDataset(args.data, splits='test2')
     test3_set = MedicalDataset(args.data, splits='test3')
+    datasets_targets = []
+    for ds in (train_set, val_set, test1_set, test2_set, test3_set):
+        datasets_targets.append([i[-2] for i in ds])
+    plot_target_distri(datasets_targets, args.name)
 
     train_loader = DataLoader(
         train_set,
@@ -70,13 +79,14 @@ def main(args):
     )
 
     # model and optimizer
-    model = VIT().to(device)
+    model = SimNetExtra(dropout=args.dropout,
+                        model_num=args.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
     if args.use_schedular:
         schedular = CosineSchedularLinearWarmup(
             optimizer, len(train_set) // args.batch_size,
-            10, args.epochs, lr=args.lr)
+            0, args.epochs, lr=args.lr)
     else:
         schedular = None
     scaler = amp.GradScaler()
@@ -84,29 +94,24 @@ def main(args):
     for e in range(1, args.epochs):
         train_acc, train_loss = train(train_loader, model, optimizer,
                                       schedular, scaler, e, args)
-        val_acc, val_loss = val(val_loader, model)
+        val_acc, val_loss = val(val_loader, model, args)
 
         # logging
-        wandb.log({
-            "accuracy": {
-                "train": train_acc,
-                "val": val_acc
-            },
-            "loss": {
-                "train": train_loss,
-                "val": val_loss
-            }
-        }
-        )
-        logging.info('train accuracy: %.2f%%, val accuracy: %.2f%%' %
-                     (train_acc, val_acc))
+        log_and_display(train_acc, val_acc, train_loss, val_loss)
+
         if val_acc > acc_best:
             torch.save(model.state_dict(), './model.pth')
             acc_best = val_acc
 
     # load best model
     model.load_state_dict(torch.load("model.pth"))
-    test((t1_loader, t2_loader, t3_loader), model)
+    test(
+        (["train", "val", "healthy", "MCI", "Alz"]
+         , [train_loader, val_loader, t1_loader, t2_loader, t3_loader]
+         )
+        , model, args)
+    torch.save(model.state_dict(), "%s.pth" % args.name)
+    wandb.finish()
 
 
 def train(loader, model, optimizer, schedular, scaler, epoch, args):
@@ -114,22 +119,27 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     total_loss = 0.
     for i, data in enumerate(loader):
-        images, ages, targets = data
+        images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
         images = images.to(device)
-        ages = ages.to(device)
-        targets = targets.to(device).view(-1, 1)
+        age = age.to(device).unsqueeze(1).type(torch.float)
+        TIV = TIV.to(device).unsqueeze(1).type(torch.float)
+        GMv = GMv.to(device).unsqueeze(1).type(torch.float)
+        GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+        WMn = WMn.to(device).unsqueeze(1).type(torch.float)
+        CSFn = CSFn.to(device).unsqueeze(1).type(torch.float)
+        targets = targets.to(device).unsqueeze(1)
 
         batch_size = images.size()[0]
 
         with amp.autocast():
-            output = model(images)
+            output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
 
         total_loss += loss.item()
         loss_meter.update(loss.item())
 
         # opt
-        if args.schedular:
+        if args.use_schedular:
             lr = schedular.update()
         else:
             lr = args.lr
@@ -152,19 +162,24 @@ def train(loader, model, optimizer, schedular, scaler, epoch, args):
     return acc_meter.avg() * 100, loss_meter.avg()
 
 
-def val(loader, model):
+def val(loader, model, args):
     model.eval()
     acc_meter, loss_meter = AverageMeter(), AverageMeter()
     for data in tqdm(loader):
         with torch.no_grad():
-            images, ages, targets = data
+            images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
             images = images.to(device)
-            ages = ages.to(device)
-            targets = targets.to(device).view(-1, 1)
+            age = age.to(device).unsqueeze(1).type(torch.float)
+            TIV = TIV.to(device).unsqueeze(1).type(torch.float)
+            GMv = GMv.to(device).unsqueeze(1).type(torch.float)
+            GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+            WMn = WMn.to(device).unsqueeze(1).type(torch.float)
+            CSFn = CSFn.to(device).unsqueeze(1).type(torch.float)
+            targets = targets.to(device).unsqueeze(1)
 
             batch_size = images.size()[0]
 
-            output = model(images)
+            output, _ = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
             loss = F.binary_cross_entropy_with_logits(output, targets)
             loss_meter.update(loss.item())
 
@@ -176,53 +191,79 @@ def val(loader, model):
     return acc_meter.avg() * 100, loss_meter.avg()
 
 
-def test(loaders, model):
+def test(loaders, model, args):
     model.eval()
-    meters = AverageMeter(), AverageMeter(), AverageMeter()
+    splits, loaders = loaders
+    meters = [AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()]
+    cls_category = []
+    plot_scores = []  # save scores to later plot their distribution with kdeplot
 
-    for loader, meter in zip(loaders, meters):
+    writer = ExcelWriter("predictions_%s.xlsx" % args.name)
+    for split, loader, meter in zip(splits, loaders, meters):
+        c_male, c_female = 0., 0.
+        t_male, t_female = 0., 0.
+        names, prediction = [], []
+        t_sne = []
+        t_sne_labels = []
+
         for data in tqdm(loader):
             with torch.no_grad():
-                images, ages, targets = data
+                images, age, TIV, GMv, GMn, WMn, CSFn, targets, name = data
                 images = images.to(device)
-                ages = ages.to(device)
-                targets = targets.to(device).view(-1, 1)
+                age = age.to(device).unsqueeze(1).type(torch.float)
+                TIV = TIV.to(device).unsqueeze(1).type(torch.float)
+                GMv = GMv.to(device).unsqueeze(1).type(torch.float)
+                GMn = GMn.to(device).unsqueeze(1).type(torch.float)
+                WMn = WMn.to(device).unsqueeze(1).type(torch.float)
+                CSFn = CSFn.to(device).unsqueeze(1).type(torch.float)
+                targets = targets.to(device).unsqueeze(1)
 
                 batch_size = images.size()[0]
 
-                output = model(images)
-
+                output, emd = model.forward_with_extra(images, age, TIV, GMv, GMn, WMn, CSFn)
+                t_sne.append(emd.cpu())
+                t_sne_labels.append(targets.to(torch.long).cpu())
                 # acc
                 pred = torch.where(output >= 0, 1., 0.)
                 num_correct = (pred == targets).sum()
+                c_male += (pred[targets == 0] == targets[targets == 0]).sum()
+                c_female += (pred[targets == 1] == targets[targets == 1]).sum()
                 meter.update(num_correct, batch_size)
 
-    print("t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f" %
-          (meters[0].avg(), meters[1].avg(), meters[2].avg()))
+                t_male += (targets[targets == 0] == 0).sum()
+                t_female += targets[targets == 1].sum()
+                # saving data for logging predictions to xlsx
+                names += name
+                prediction += (torch.sigmoid(output.view(-1)).tolist())
+        t_sne_labels = torch.cat(t_sne_labels, dim=0).numpy()
+        t_sne = torch.cat(t_sne, dim=0).numpy()
+        emd_x = TSNE().fit_transform(t_sne)
+        plot_tsne(emd_x, t_sne_labels, split, args.name)
 
-
-def get_attention_maps(model, loader):
-    model.eval()
-    attention_maps = [0] * 6
-    number_samples = 0
-    for data in loader:
-        image, age, target = data
-        image = image.to(device)
-        _, _, H, W, L = image.size()
-
-        with torch.no_grad():
-            x, attn_weights = model(image, True)
-        for i in range(len(attn_weights)):
-            # reshape to original image size shape(b, num_heads, n, n)
-            attn_weight = torch.mean(attn_weights[i], dim=1)[:, 0, :-1]
-            print(attn_weight)
-            attn_weight = attn_weight.view(1, 1, 10, 12, 10)
-            attn_weight = F.interpolate(attn_weight, size=(120, 144, 120))
-
-            attention_maps[i] += attn_weight
-    for i in range(len(attention_maps)):
-        attention_maps[i] /= number_samples
-        np.save("head%d" % i, attention_maps[i])
+        cls_category.append((c_male / t_male, c_female / t_female))
+        plot_scores.append(prediction)
+        # save predictions to xlsx
+        data_frame = pd.DataFrame({
+            "IDs": names,
+            "Score": prediction
+        })
+        data_frame.to_excel(writer, split, index=False)
+    writer.save()
+    plot_hist(plot_scores, args.name)
+    # log to text
+    with open("res.txt", 'a') as f:
+        f.write(args.name)
+        f.write("train acc: %.2f, val acc: %.2f, t1 acc: %.2f, t2 acc: %.2f, t3 acc: %.2f\n" %
+                (meters[0].avg(), meters[1].avg(), meters[2].avg(), meters[3].avg(), meters[4].avg()))
+        f.write("Male vs. Female\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n"
+                "%2.2f, %2.2f\n" %
+                (cls_category[0][0], cls_category[0][1], cls_category[1][0], cls_category[1][1],
+                 cls_category[2][0], cls_category[2][1], cls_category[3][0], cls_category[3][1],
+                 cls_category[4][0], cls_category[4][1]))
 
 
 # data related
@@ -237,8 +278,10 @@ arg_parser.add_argument('--batch_size', default=32, type=int,
 arg_parser.add_argument('--num_workers', default=2, type=int,
                         help='number of data loader workers')
 # network related
-arg_parser.add_argument("--dropout", default=0.5, type=float,
+arg_parser.add_argument("--dropout", default=0.2, type=float,
                         help="fully connect layer dropout")
+arg_parser.add_argument("--model", default=1, type=int,
+                        help="which model to use")
 # optimization related
 arg_parser.add_argument('--lr', type=float, default=1e-4,
                         help='optimizer learning rate')
@@ -247,14 +290,15 @@ arg_parser.add_argument('--weight_decay', type=float, default=5e-5,
 arg_parser.add_argument('--use_schedular', action='store_true',
                         help='uses learning rate warmup and decay')
 # training related
-
 arg_parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
-arg_parser.add_argument('--seed', type=int, help='number of training epochs')
+arg_parser.add_argument('--seed', type=int, default=34324
+                        , help='number of training epochs')
 arg_parser.add_argument('--log_freq', type=int, default=2,
                         help='frequency of logging')
 # others
-arg_parser.add_argument('--name', type=str, default='', help='experiment name')
+arg_parser.add_argument('--name', type=str, default='', required=True,
+                        help='experiment name')
 arg_parser.add_argument('--ram', default=False, action="store_true",
                         help="if True transfers images to RAM for faster IO")
 arg = arg_parser.parse_args()

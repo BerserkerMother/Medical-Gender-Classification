@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from torch.utils.data import random_split
 
 from .path import DATA_PATH
 
@@ -100,3 +101,10 @@ class MedicalDataset(Dataset):
         if self.transform:
             image = self.transform(image)  # (C, H, W), (3, H, W), (H, W), (1, H, W)
         return image, age, TIV, GMv, GMn, WMn, CSFn, target, im_id
+
+    def split_train_test(self, ratios):
+        set_sizes = [int(r * len(self.data)) for r in ratios]
+        test_size = len(self.data) - sum(set_sizes)
+        set_sizes.append(test_size)
+
+        return random_split(self, set_sizes)

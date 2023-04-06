@@ -2,19 +2,19 @@ import math
 
 
 class CosineSchedularLinearWarmup:
-    def __init__(self, optimizer, steps_per_epoch, warmup_epochs, epochs, lr):
+    def __init__(self, optimizer, num_training_steps, warmup_steps, lr):
         self.opt = optimizer
-        self.total_steps = steps_per_epoch * epochs
-        self.wamrup_steps = warmup_epochs * steps_per_epoch
-        self.decay_steps = self.total_steps - self.wamrup_steps
+        self.num_training_steps = num_training_steps
+        self.warmup_steps = warmup_steps
+        self.decay_steps = self.num_training_steps - self.warmup_steps
         self.step = 0
         self.lr = lr
 
     def get_scale(self):
-        if self.wamrup_steps > self.step:
-            return self.step / self.wamrup_steps
+        if self.warmup_steps > self.step:
+            return self.step / self.warmup_steps
         else:
-            ratio = (self.step - self.wamrup_steps) / self.decay_steps
+            ratio = (self.step - self.warmup_steps) / self.decay_steps
             return 0.5 * (1 + math.cos(ratio * math.pi))
 
     def update(self):

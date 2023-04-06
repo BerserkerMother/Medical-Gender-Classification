@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models.video.resnet
 from torch import Tensor
+from torchvision.models.video import R3D_18_Weights
 
 
 class SimNet(nn.Module):
@@ -134,7 +135,7 @@ class R3D18(nn.Module):
         self.name = "3D Resnet"
 
         # original R3D18
-        res = torchvision.models.video.r3d_18(pretrained=True)
+        res = torchvision.models.video.r3d_18(weights=R3D_18_Weights.DEFAULT)
         res = list(res.children())[1:-1]
         basic_stem = nn.Sequential(
             nn.Conv3d(1, 64, kernel_size=(7, 7, 7), stride=(2, 2, 2), bias=False),

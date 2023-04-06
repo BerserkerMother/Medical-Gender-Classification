@@ -10,9 +10,13 @@ data/
 .idea
 wandb/
 
+# results
+plots/
+res.txt
+**.xlsx
+
 # fix annotation file
 .fix_anno.py
-
 data.xlsx
 results.md
 xlsx_to_text.py
